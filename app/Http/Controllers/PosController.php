@@ -76,13 +76,17 @@ class PosController extends Controller
 
         // ZATCA Phase 2: sign the sale's e-invoice now, so the receipt printed next carries its QR;
         // report it to ZATCA after the response, so the till does not wait on the network.
-        // A ZATCA problem never fails the sale: the receipt then keeps the Phase 1 QR.
+        // A ZATCA problem never fails the sale: the receipt then keeps the Phase 1 QR, and the till says
+        // why (the detail only to admins), so a broken setup is not silent.
+        $einvoiceError = null;
         try {
             if ($invoice = $invoicer->issue($order)) {
                 defer(fn () => $invoicer->report($invoice));
             }
         } catch (Throwable $e) {
             report($e);
+            $einvoiceError = __('The e-invoice could not be created; the receipt has the basic QR.')
+                .($request->user()->isAdmin() ? ' '.$e->getMessage() : '');
         }
 
         return response()->json([
@@ -92,6 +96,7 @@ class PosController extends Controller
             'total' => (float) $order->total,
             'change' => (float) $order->change_amount,
             'receipt_url' => route('orders.receipt', $order),
+            'einvoice_error' => $einvoiceError,
         ], 201);
     }
 }

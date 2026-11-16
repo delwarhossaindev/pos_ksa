@@ -243,7 +243,10 @@ async function confirmPayment() {
         }
         modal.value = null;
         resetOrder();
-        showToast(t('Order #:no saved', { no: data.order_no }));
+        // Sold either way; a ZATCA e-invoice problem is shown instead of the usual "saved".
+        showToast(data.einvoice_error
+            ? `${t('Order #:no saved', { no: data.order_no })} — ${data.einvoice_error}`
+            : t('Order #:no saved', { no: data.order_no }), !!data.einvoice_error);
         printUrl(data.receipt_url);
         // Refresh header notifications + "last order" (reprint / download) without touching the menu.
         router.reload({ only: ['recentOrders', 'todayCount', 'lastOrder'] });

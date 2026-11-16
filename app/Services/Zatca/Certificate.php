@@ -62,16 +62,34 @@ class Certificate
 
     /**
      * Serial number in decimal (PHP returns large serials as hex).
+     *
+     * Plain PHP on purpose: bcmath / gmp are often missing on shared hosting, and a missing extension
+     * here silently stopped every sale from getting its e-invoice there.
      */
     public function serialNumber(): string
     {
-        $decimal = '0';
+        return self::hexToDecimal($this->parsed['serialNumberHex']);
+    }
 
-        foreach (str_split(strtolower($this->parsed['serialNumberHex'])) as $digit) {
-            $decimal = bcadd(bcmul($decimal, '16'), (string) hexdec($digit));
+    /** Arbitrary-length hex → decimal string, digit by digit (decimal digits kept least significant first). */
+    public static function hexToDecimal(string $hex): string
+    {
+        $digits = [0];
+
+        foreach (str_split(strtolower(ltrim($hex, '0')) ?: '0') as $hexDigit) {
+            $carry = hexdec($hexDigit);
+            foreach ($digits as $i => $d) {
+                $value = $d * 16 + $carry;
+                $digits[$i] = $value % 10;
+                $carry = intdiv($value, 10);
+            }
+            while ($carry > 0) {
+                $digits[] = $carry % 10;
+                $carry = intdiv($carry, 10);
+            }
         }
 
-        return $decimal;
+        return implode('', array_reverse($digits));
     }
 
     public function validTo(): string

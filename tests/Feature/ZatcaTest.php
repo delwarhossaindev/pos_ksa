@@ -289,6 +289,34 @@ class ZatcaTest extends TestCase
         $this->assertSame(number_format((float) $order->total, 2), $payable($invoice));
     }
 
+    public function test_certificate_serial_converts_from_hex_without_bcmath(): void
+    {
+        $this->assertSame('0', \App\Services\Zatca\Certificate::hexToDecimal('0'));
+        $this->assertSame('255', \App\Services\Zatca\Certificate::hexToDecimal('00ff'));
+        $this->assertSame('18446744073709551615', \App\Services\Zatca\Certificate::hexToDecimal('FFFFFFFFFFFFFFFF'));
+        // 20 bytes, the size of a ZATCA serial: 2^160 − 1.
+        $this->assertSame('1461501637330902918203684832716283019655932542975', \App\Services\Zatca\Certificate::hexToDecimal(str_repeat('f', 40)));
+    }
+
+    public function test_an_e_invoice_that_cannot_be_signed_is_reported_on_the_till(): void
+    {
+        $this->onboard();
+        ZatcaSetting::current()->update(['private_key' => 'not a key']); // e.g. a broken key on the server
+        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();
+
+        $sale = fn ($user) => $this->actingAs($user)->postJson(route('orders.store'), [
+            'order_type' => 'takeaway', 'items' => [['product_id' => $fries->id, 'quantity' => 1]], 'payment_method' => 'card',
+        ])->assertCreated();
+
+        // Still sold; the admin sees why, the cashier only that it happened.
+        $notice = __('The e-invoice could not be created; the receipt has the basic QR.');
+        $admin = $sale($this->admin())->json('einvoice_error');
+        $this->assertStringStartsWith($notice, $admin);
+        $this->assertStringContainsString('openssl_sign', $admin);
+        $this->assertSame($notice, $sale($this->cashier())->json('einvoice_error'));
+        $this->assertSame(0, Invoice::count());
+    }
+
     public function test_a_zatca_failure_never_blocks_the_sale(): void
     {
         $this->onboard();

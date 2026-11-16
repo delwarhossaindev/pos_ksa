@@ -207,6 +207,7 @@
     "Items": "الأصناف",
     "Administrator only": "للمدير فقط",
     "Super Admin only": "للمدير العام فقط",
+    "The e-invoice could not be created; the receipt has the basic QR.": "تعذّر إنشاء الفاتورة الإلكترونية؛ يحمل الإيصال رمز QR الأساسي.",
     "Ramadan Items": "رمضانيات",
     "Add-ons": "إضافات",
     "Regenerate CSR": "إعادة إنشاء طلب الشهادة",
