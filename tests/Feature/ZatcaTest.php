@@ -135,66 +135,87 @@ class ZatcaTest extends TestCase
             ->assertSessionHas('error');
     }
 
+    private function sale(array $items, array $extra = []): Order
+    {
+        $id = $this->actingAs($this->cashier())->postJson(route('orders.store'), [
+            'order_type' => 'takeaway',
+            'items' => $items,
+            'payment_method' => 'card',
+            'card_type' => 'mada',
+            ...$extra,
+        ])->assertCreated()->json('id');
+
+        return Order::findOrFail($id);
+    }
+
     public function test_full_onboarding_then_pos_order_e_invoice_is_signed_reported_and_printed(): void
     {
+        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail(); // 22.00 incl. VAT
+
+        // A sale before onboarding: no e-invoice, the receipt keeps the Phase 1 QR.
+        $early = $this->sale([['product_id' => $fries->id, 'quantity' => 1]]);
+        $this->assertNull($early->einvoice);
+        $this->assertArrayNotHasKey(6, QrCode::decode(ZatcaQr::payload($early)));
+
         $setting = $this->onboard();
         $this->assertTrue($setting->hasProductionCsid());
         $this->assertCount(3, $setting->compliance_checks); // simplified invoice, credit and debit note
 
-        // A sale on the till (22.00 SAR incl. VAT)
-        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();
-        $orderId = $this->actingAs($this->cashier())->postJson(route('orders.store'), [
-            'order_type' => 'takeaway',
-            'items' => [['product_id' => $fries->id, 'quantity' => 2]],
-            'payment_method' => 'card',
-            'card_type' => 'mada',
-        ])->assertCreated()->json('id');
-        $order = Order::findOrFail($orderId);
-
-        // The create form is prefilled with net prices from the order.
-        $this->actingAs($this->admin())->get(route('admin.invoices.create', ['order' => $orderId]))
+        // That earlier sale can still get its e-invoice by hand: the form is prefilled with net prices.
+        $this->actingAs($this->admin())->get(route('admin.invoices.create', ['order' => $early->id]))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Invoices/Create')
-                ->where('defaults.order_id', $orderId)
+                ->where('defaults.order_id', $early->id)
                 ->where('defaults.payment_means', '48')
-                ->where('defaults.items.0.quantity', 2)
+                ->where('defaults.items.0.quantity', 1)
                 ->where('defaults.items.0.unit_price', 19.13)
                 ->where('allowedTypes', ['simplified']));
-
         $this->actingAs($this->admin())->post(route('admin.invoices.store'), [
             'invoice_type' => 'simplified',
             'document_type' => 'invoice',
-            'issue_date' => $order->created_at->toDateString(),
+            'issue_date' => $early->created_at->toDateString(),
             'payment_means' => '48',
-            'order_id' => $orderId,
-            'items' => [['name' => 'Fries', 'quantity' => 2, 'unit_price' => 19.13]],
+            'order_id' => $early->id,
+            'items' => [['name' => 'Fries', 'quantity' => 1, 'unit_price' => 19.13]],
             'submit_now' => true,
         ])->assertRedirect();
+        $manual = $early->fresh()->einvoice;
+        $this->assertSame($early->invoice_no, $manual->invoice_number);
+        $this->assertSame(1, (int) $manual->icv);
+        $this->assertSame(ZatcaSetting::INITIAL_PIH, $manual->previous_invoice_hash);
 
-        $invoice = Invoice::firstOrFail();
+        // From now on every sale is e-invoiced by itself: signed before the receipt prints, reported after.
+        $order = $this->sale([['product_id' => $fries->id, 'quantity' => 2]]);
+        $invoice = $order->einvoice;
+        $this->assertNotNull($invoice);
         $this->assertSame($order->invoice_no, $invoice->invoice_number); // receipt and e-invoice share the number
+        $this->assertSame('simplified', $invoice->invoice_type);
+        $this->assertSame('48', $invoice->payment_means);
         $this->assertSame('REPORTED', $invoice->zatca_status);
-        $this->assertSame(1, (int) $invoice->icv);
-        $this->assertSame(ZatcaSetting::INITIAL_PIH, $invoice->previous_invoice_hash);
+        $this->assertSame(2, (int) $invoice->icv);
+        $this->assertSame($manual->invoice_hash, $invoice->previous_invoice_hash);
         $this->assertStringContainsString('<ds:SignatureValue>', $invoice->signed_xml);
         $this->assertSame('44.00', number_format((float) $invoice->total_amount, 2));
+        $this->assertSame('0.00', number_format((float) $invoice->rounding_amount, 2));
+        $this->assertSame([[2, '19.13']], $invoice->items->map(fn ($i) => [(int) $i->quantity, number_format((float) $i->unit_price, 2)])->all());
 
-        // Phase 2 QR (tags 1–9) now replaces the phase 1 QR on the printed receipt.
+        // Phase 2 QR (tags 1–9) is on the printed receipt.
         $tags = QrCode::decode(ZatcaQr::payload($order->fresh()));
         $this->assertSame('399999999900003', $tags[2]);
         $this->assertSame('44.00', $tags[4]);
         $this->assertArrayHasKey(9, $tags);
-        $this->actingAs($this->cashier())->get(route('orders.receipt', $orderId))->assertOk();
+        $this->actingAs($this->cashier())->get(route('orders.receipt', $order))->assertOk()->assertSee('data:image/svg+xml;base64', false);
 
         // Hash chain continues on the next document.
         $this->assertSame($invoice->invoice_hash, ZatcaSetting::current()->previous_invoice_hash);
 
         // Order page links the e-invoice; a second invoice for the same order is refused.
-        $this->actingAs($this->admin())->get(route('orders.show', $orderId))
+        $this->actingAs($this->admin())->get(route('orders.show', $order))
             ->assertInertia(fn (Assert $page) => $page->where('einvoice.invoice_number', $order->invoice_no));
-        $this->actingAs($this->admin())->get(route('admin.invoices.create', ['order' => $orderId]))
+        $this->actingAs($this->admin())->get(route('admin.invoices.create', ['order' => $order->id]))
             ->assertRedirect(route('admin.invoices.show', $invoice));
+        $orderId = $order->id;
 
         // Credit note for the invoice
         $this->actingAs($this->admin())->post(route('admin.invoices.store'), [
@@ -209,7 +230,7 @@ class ZatcaTest extends TestCase
         ])->assertRedirect();
         $credit = Invoice::where('document_type', 'credit')->firstOrFail();
         $this->assertSame('CRN-000001', $credit->invoice_number);
-        $this->assertSame(2, (int) $credit->icv);
+        $this->assertSame(3, (int) $credit->icv);
         $this->assertSame('pending', $credit->zatca_status);
 
         // Pages render, XML downloads, pending submit reports the credit note.
@@ -221,9 +242,68 @@ class ZatcaTest extends TestCase
         $this->assertSame('REPORTED', $credit->fresh()->zatca_status);
 
         $this->actingAs($this->admin())->get(route('admin.invoices.index', ['status' => 'accepted']))
-            ->assertInertia(fn (Assert $page) => $page->where('stats.accepted', 2)->has('invoices.data', 2));
+            ->assertInertia(fn (Assert $page) => $page->where('stats.accepted', 3)->has('invoices.data', 3));
 
         Http::assertSent(fn ($request) => $request->hasHeader('Accept-Version', 'V2'));
+    }
+
+    public function test_pos_e_invoice_always_charges_exactly_what_was_paid(): void
+    {
+        $this->onboard();
+        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();   // 22.00
+        $shawarma = Product::where('name_en', 'Shawarma Sandwich')->firstOrFail(); // 7.00
+
+        $payable = fn (Invoice $i) => preg_match('#<cbc:PayableAmount currencyID="SAR">([\d.]+)<#', $i->signed_xml, $m) ? $m[1] : null;
+
+        // 10.00 cannot be split into net + 15% VAT to the halala (8.70 + 1.31 = 10.01):
+        // the e-invoice says 10.01 incl. VAT, rounds −0.01, and the payable amount is the 10.00 paid.
+        $order = $this->sale([['product_id' => $fries->id, 'quantity' => 1]], ['discount' => 12]);
+        $this->assertSame('10.00', number_format((float) $order->total, 2));
+        $invoice = $order->einvoice;
+        $this->assertSame('8.70', number_format((float) $invoice->line_extension_amount, 2));
+        $this->assertSame('10.01', number_format((float) $invoice->total_amount, 2));
+        $this->assertSame('-0.01', number_format((float) $invoice->rounding_amount, 2));
+        $this->assertStringContainsString('<cbc:PayableRoundingAmount currencyID="SAR">-0.01</cbc:PayableRoundingAmount>', $invoice->signed_xml);
+        $this->assertSame('10.00', $payable($invoice));
+        $this->assertSame('REPORTED', $invoice->zatca_status);
+        // QR tag 4 is the amount due (BT-115), so the receipt's QR shows the 10.00 paid.
+        $this->assertSame('10.00', QrCode::decode(ZatcaQr::payload($order->fresh()))[4]);
+
+        // 2 × 7.00 = 14.00 → net 12.17, which 2 × a 2-decimal price cannot make: one unit is split off.
+        $order = $this->sale([['product_id' => $shawarma->id, 'quantity' => 2]]);
+        $invoice = $order->einvoice;
+        $this->assertSame([[1, '6.08'], [1, '6.09']], $invoice->items->map(fn ($i) => [(int) $i->quantity, number_format((float) $i->unit_price, 2)])->all());
+        $this->assertSame('12.17', number_format((float) $invoice->line_extension_amount, 2));
+        $this->assertSame('14.00', number_format((float) $invoice->total_amount, 2));
+        $this->assertNull($invoice->rounding_amount == 0 ? null : $invoice->rounding_amount);
+        $this->assertStringNotContainsString('PayableRoundingAmount', $invoice->signed_xml);
+        $this->assertSame('14.00', $payable($invoice));
+
+        // Line and order discounts: the lines still add up to the order's net exactly.
+        $order = $this->sale([
+            ['product_id' => $fries->id, 'quantity' => 3, 'discount_percent' => 10],
+            ['product_id' => $shawarma->id, 'quantity' => 1],
+        ], ['discount' => 2.5]);
+        $invoice = $order->einvoice;
+        $this->assertSame(number_format((float) $order->net_amount, 2), number_format((float) $invoice->line_extension_amount, 2));
+        $this->assertSame(number_format((float) $order->total, 2), $payable($invoice));
+    }
+
+    public function test_a_zatca_failure_never_blocks_the_sale(): void
+    {
+        $this->onboard();
+        // ZATCA goes down: a fresh fake, so onboarding's "REPORTED" answer no longer matches first.
+        Http::swap(new \Illuminate\Http\Client\Factory(app('events')));
+        Http::fake(['*' => Http::response(['message' => 'Service unavailable'], 503)]);
+        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();
+
+        $order = $this->sale([['product_id' => $fries->id, 'quantity' => 1]]);
+
+        // Sold and signed (Phase 2 QR on the receipt); reporting waits in Settings → E-Invoices.
+        $invoice = $order->einvoice;
+        $this->assertNotNull($invoice);
+        $this->assertArrayHasKey(9, QrCode::decode(ZatcaQr::payload($order)));
+        $this->assertContains($invoice->zatca_status, ['pending', 'ERROR']);
     }
 
     public static function environments(): array
@@ -314,6 +394,7 @@ class ZatcaTest extends TestCase
         $this->onboard('sandbox');
         $admin = $this->admin();
 
+        // A till sale is e-invoiced and reported in the sandbox by itself.
         $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();
         $orderId = $this->actingAs($this->cashier())->postJson(route('orders.store'), [
             'order_type' => 'takeaway',
@@ -321,16 +402,20 @@ class ZatcaTest extends TestCase
             'payment_method' => 'cash',
             'paid_amount' => 22,
         ])->json('id');
+        $sandboxSale = Order::find($orderId)->einvoice;
+        $this->assertSame('sandbox', $sandboxSale->environment);
+        $this->assertSame('REPORTED', $sandboxSale->zatca_status);
+
+        // And one issued by hand, signed but not submitted.
         $invoiceData = [
             'invoice_type' => 'simplified',
             'document_type' => 'invoice',
             'issue_date' => now()->toDateString(),
             'payment_means' => '10',
-            'order_id' => $orderId,
             'items' => [['name' => 'Fries', 'quantity' => 1, 'unit_price' => 19.13]],
         ];
-        $this->actingAs($admin)->post(route('admin.invoices.store'), $invoiceData)->assertRedirect(); // signed, not submitted
-        $sandboxInvoice = Invoice::firstOrFail();
+        $this->actingAs($admin)->post(route('admin.invoices.store'), $invoiceData)->assertRedirect();
+        $sandboxInvoice = Invoice::where('zatca_status', 'pending')->firstOrFail();
         $this->assertSame('sandbox', $sandboxInvoice->environment);
 
         // Go live: key, certificates and the ICV/PIH chain of the sandbox EGS are gone.
@@ -348,7 +433,7 @@ class ZatcaTest extends TestCase
         $this->actingAs($admin)->get(route('admin.invoices.index'))
             ->assertInertia(fn (Assert $page) => $page->where('environment', 'production')->where('stats.all', 0));
         $this->actingAs($admin)->get(route('admin.invoices.index', ['environment' => 'sandbox']))
-            ->assertInertia(fn (Assert $page) => $page->where('stats.all', 1)->where('canSubmit', false));
+            ->assertInertia(fn (Assert $page) => $page->where('stats.all', 2)->where('canSubmit', false));
         $this->actingAs($admin)->post(route('admin.invoices.store'), $invoiceData)->assertSessionHas('error'); // not onboarded yet
 
         // Onboard production; the sandbox invoice is never sent there, even by "submit pending".
@@ -358,11 +443,11 @@ class ZatcaTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('canSubmit', false)->where('currentEnvironment', 'production'));
         $this->actingAs($admin)->post(route('admin.invoices.submit-pending'))->assertSessionHas('status');
         $this->assertSame('pending', $sandboxInvoice->fresh()->zatca_status);
-        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'reporting'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/core/invoices/reporting'));
 
         // The same order gets its real production invoice, starting a fresh chain at ICV 1.
         $this->actingAs($admin)->get(route('orders.show', $orderId))->assertInertia(fn (Assert $page) => $page->where('einvoice', null));
-        $this->actingAs($admin)->post(route('admin.invoices.store'), $invoiceData + ['submit_now' => true])->assertRedirect();
+        $this->actingAs($admin)->post(route('admin.invoices.store'), $invoiceData + ['order_id' => $orderId, 'submit_now' => true])->assertRedirect();
         $live = Invoice::where('environment', 'production')->firstOrFail();
         $this->assertSame(1, (int) $live->icv);
         $this->assertSame(ZatcaSetting::INITIAL_PIH, $live->previous_invoice_hash);

@@ -190,7 +190,8 @@ class ZatcaService
             'seller_name' => $setting->seller_name,
             'vat_number' => $setting->vat_number,
             'timestamp' => $invoice->issueTimestamp(),
-            'total' => number_format((float) $invoice->total_amount, 2, '.', ''),
+            // Tag 4 is the amount due (BT-115, PayableAmount): what the customer paid, rounding included.
+            'total' => number_format((float) $invoice->total_amount + (float) $invoice->rounding_amount, 2, '.', ''),
             'vat_total' => number_format((float) $invoice->vat_amount, 2, '.', ''),
             'simplified' => $invoice->isSimplified(),
         ]);

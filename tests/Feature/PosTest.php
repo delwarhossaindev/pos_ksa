@@ -47,15 +47,16 @@ class PosTest extends TestCase
         config(['app.demo_logins' => true]);
         $this->get(route('login'))->assertInertia(fn (Assert $page) => $page
             ->component('Auth/Login')
-            ->has('demoAccounts', 3)
-            ->where('demoAccounts.0.email', 'superadmin@pos.test')
-            ->where('demoAccounts.0.role', 'superadmin')
-            ->where('demoAccounts.1.email', 'admin@pos.test')
-            ->where('demoAccounts.1.role', 'admin')
-            ->where('demoAccounts.2.email', 'cashier@pos.test')
-            ->where('demoAccounts.2.role', 'cashier'));
+            ->has('demoAccounts', 2)
+            ->where('demoAccounts.0.email', 'admin@pos.test')
+            ->where('demoAccounts.0.role', 'admin')
+            ->where('demoAccounts.1.email', 'cashier@pos.test')
+            ->where('demoAccounts.1.role', 'cashier'));
 
-        // Each button really signs in with its role.
+        // The superadmin is never offered as a button — not even its email reaches the browser.
+        $this->get(route('login'))->assertDontSee('superadmin@pos.test');
+
+        // Each account signs in with its role; the superadmin by typing its credentials.
         foreach (['superadmin', 'admin', 'cashier'] as $role) {
             $this->post(route('login'), ['email' => "$role@pos.test", 'password' => 'password'])->assertRedirect(route('pos'));
             $this->assertSame($role, auth()->user()->role);
@@ -64,7 +65,7 @@ class PosTest extends TestCase
 
         // A deactivated account is not offered.
         $this->cashier()->update(['is_active' => false]);
-        $this->get(route('login'))->assertInertia(fn (Assert $page) => $page->has('demoAccounts', 2));
+        $this->get(route('login'))->assertInertia(fn (Assert $page) => $page->has('demoAccounts', 1));
 
         // Off (the production default): no credentials are sent to the browser at all.
         config(['app.demo_logins' => false]);

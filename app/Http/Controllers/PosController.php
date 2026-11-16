@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Category;
 use App\Models\Order;
 use App\Models\Setting;
+use App\Services\Zatca\OrderInvoicer;
 use App\Support\OrderService;
 use Illuminate\View\View;
 use Illuminate\Http\JsonResponse;
@@ -12,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class PosController extends Controller
 {
@@ -51,7 +53,7 @@ class PosController extends Controller
     }
 
     /** JSON endpoint called from the POS screen; the page stays put and prints the receipt. */
-    public function store(Request $request, OrderService $service): JsonResponse
+    public function store(Request $request, OrderService $service, OrderInvoicer $invoicer): JsonResponse
     {
         $data = $request->validate([
             'order_type' => ['required', Rule::in(Order::TYPES)],
@@ -71,6 +73,17 @@ class PosController extends Controller
         ]);
 
         $order = $service->create($data, $request->user());
+
+        // ZATCA Phase 2: sign the sale's e-invoice now, so the receipt printed next carries its QR;
+        // report it to ZATCA after the response, so the till does not wait on the network.
+        // A ZATCA problem never fails the sale: the receipt then keeps the Phase 1 QR.
+        try {
+            if ($invoice = $invoicer->issue($order)) {
+                defer(fn () => $invoicer->report($invoice));
+            }
+        } catch (Throwable $e) {
+            report($e);
+        }
 
         return response()->json([
             'id' => $order->id,

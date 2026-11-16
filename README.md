@@ -17,7 +17,7 @@
   <img src="https://img.shields.io/badge/VAT-15%25-0B6E4F?style=for-the-badge" alt="VAT 15%">
 </p>
 
-**[✨ Features](#-features) · [🧾 ZATCA](#-zatca-e-invoicing-phase-2) · [🚀 Quick start](#-quick-start) · [🔑 Logins](#-default-logins) · [☁️ Deploy](#️-deployment) · [🗂️ Project map](#️-project-map)**
+**[✨ Features](#-features) · [🧾 ZATCA](#-zatca-e-invoicing-phase-2) · [🚀 Quick start](#-quick-start) · [🛡️ Roles](#️-roles--permissions) · [🔑 Logins](#-default-logins) · [☁️ Deploy](#️-deployment) · [🗂️ Project map](#️-project-map)**
 
 </div>
 
@@ -62,7 +62,8 @@ VAT-inclusive pricing, simplified tax invoices with QR codes, and ZATCA Phase 2 
 | 💳 | **Payment** | Cash (amount received, quick-cash buttons, change) or Card (mada · Visa · MasterCard). |
 | 🧾 | **Receipt** | 80 mm *Simplified Tax Invoice* with Arabic and English labels, VAT extracted from VAT-inclusive prices, a daily order number and a **ZATCA QR code**. Prints automatically after payment. |
 | 📋 | **Orders** | Daily list, search, view, reprint, and void (admin only). |
-| 📊 | **Admin** | Sales report (totals, VAT, by payment / order type / cashier, top products), categories, products, users (admin / cashier) and store settings. |
+| 📊 | **Back office** | Sales report (totals, VAT, by payment / order type / cashier, top products), categories, products, customers and inventory. |
+| 🛡️ | **Three roles** | **Super Admin** (everything, incl. Settings), **Admin** (back office) and **Cashier** (the till) — see [Roles](#️-roles--permissions). |
 | 🌱 | **Seed data** | The full menu from the photos (8 categories, 155 items) and the store details from the sample receipt. |
 
 <details>
@@ -79,7 +80,7 @@ VAT-inclusive pricing, simplified tax invoices with QR codes, and ZATCA Phase 2 
   - These screens open **inside the same frame**: the header and bottom bar stay put and the page doesn't reload.
   - Off the POS, the empty first cell becomes a **POS** button to go back to selling.
   - Categories is a tab inside Item List, and Users is a tab inside Settings.
-  - A cashier sees the admin buttons greyed out.
+  - A cashier sees the admin buttons greyed out, and an admin sees Settings greyed out (Super Admin only).
 - **Categories:** besides the printed menu, **Ramadan Items (رمضانيات)** and **Add-ons (إضافات)**. Their prices are placeholders, so edit them in Item List. Use Inventory to hide Ramadan Items outside Ramadan.
 - **Customers** (admin): built automatically from the phone numbers entered on orders.
 - **Inventory** (admin): tap an item to mark it sold out (hidden from the POS) or available again.
@@ -131,6 +132,30 @@ flowchart LR
 | 🎭 Simulation | `simulation` | The Fatoora simulation portal, with a real OTP from fatoora.zatca.gov.sa. |
 | 🟢 Production | `production` | Live invoices. |
 
+### 🧾 Every sale is e-invoiced by itself
+
+Once onboarding is done, each POS sale gets its **simplified tax invoice** the moment it is paid:
+
+1. **Signed before the receipt prints** — the receipt carries the **Phase 2 QR** (tags 1–9: hash, signature, public key), and the e-invoice shares the receipt's number (`INV-…`).
+2. **Reported to ZATCA after the response** — the till never waits on the network. If ZATCA is down, the sale still goes through and the invoice waits in **Settings → E-Invoices → Submit pending**.
+3. **Exact to the halala** — till prices include VAT, so the order's net is spread over the lines in halalas. When net + 15% VAT can't hit the paid total exactly (≈13% of totals, e.g. 10.00 → 8.70 + 1.31), the ±0.01 goes into `PayableRoundingAmount`: the payable amount and QR tag 4 always equal what the customer paid.
+
+Sales made before onboarding keep the Phase 1 QR; issue their e-invoice by hand from the order page. 📁 `app/Services/Zatca/OrderInvoicer.php`
+
+### 🔒 Sandbox VAT numbers (filled in automatically)
+
+While the active environment is **sandbox**, ZATCA's test numbers are filled in and locked — whatever is typed, these are used:
+
+| | VAT number | Where |
+|---|---|---|
+| 🏪 Shop (seller) | `399999999900003` | ZATCA page, every e-invoice, the printed receipt and its QR code |
+| 👤 Customer (buyer) | `311111111111113` | Every e-invoice and credit / debit note, and the B2B compliance checks |
+
+In **simulation** and **production** both fields unlock: the shop's own VAT comes from Admin → Settings, and the customer's is typed on each invoice. Switching away from the sandbox puts the store VAT back automatically. Override the test numbers with `ZATCA_SANDBOX_SELLER_VAT` / `ZATCA_SANDBOX_BUYER_VAT` in `.env`.
+
+> [!IMPORTANT]
+> After the seller VAT changes, open **Settings → ZATCA**, press **Save**, then generate a new CSR and onboard again — the old certificate carries the old VAT.
+
 📁 `app/Services/Zatca/` · `config/zatca.php` · `app/Http/Controllers/Admin/ZatcaController.php` · `app/Http/Controllers/Admin/InvoiceController.php`
 
 ---
@@ -173,17 +198,33 @@ Create the `pos_ksa` database (utf8mb4), then run `php artisan migrate:fresh --s
 
 ---
 
+## 🛡️ Roles & permissions
+
+| Screen | 👑 Super Admin | 🧑‍💼 Admin | 🧑‍🍳 Cashier |
+|---|:-:|:-:|:-:|
+| POS, own orders, receipts | ✅ | ✅ | ✅ |
+| All orders, void an order | ✅ | ✅ | — |
+| Reports · Item List · Categories · Customers · Inventory | ✅ | ✅ | — |
+| **Settings:** Store · Users · ZATCA · E-Invoices | ✅ | — | — |
+
+Locked screens are greyed out in the bottom bar and return **403** if opened by URL. Only a Super Admin manages users, and can't demote or deactivate themselves.
+
+---
+
 ## 🔑 Default logins
 
-| Role | Email | Password |
-|---|---|---|
-| 👑 Admin | `admin@pos.test` | `password` |
-| 🧑‍🍳 Cashier | `cashier@pos.test` | `password` |
+Created by `DemoUsersSeeder` (part of `php artisan migrate --seed`):
+
+| Role | Email | Password | Login button |
+|---|---|---|:-:|
+| 👑 Super Admin | `superadmin@pos.test` | `password` | — (type it in) |
+| 🧑‍💼 Admin | `admin@pos.test` | `password` | ✅ |
+| 🧑‍🍳 Cashier | `cashier@pos.test` | `password` | ✅ |
 
 > [!WARNING]
-> **Change these passwords** in Admin → Users before going live.
+> **Change these passwords** in Settings → Users before going live — the Super Admin's first.
 
-With `DEMO_LOGINS=true` in `.env`, these accounts appear as one-click buttons under the login form. Set **`DEMO_LOGINS=false`** on a real till: when it's off, no credentials are sent to the browser. Deactivated accounts are never shown.
+With `DEMO_LOGINS=true` in `.env`, the Admin and Cashier accounts appear as one-click buttons under the login form. The Super Admin is **never** shown there — not even its email reaches the browser. Set **`DEMO_LOGINS=false`** on a real till: when it's off, no credentials are sent to the browser. Deactivated accounts are never shown.
 
 ---
 
@@ -208,6 +249,18 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**:
 > [!NOTE]
 > `.env`, `vendor/` and `storage/` contents live only on the server and are never overwritten. Run `php artisan migrate --force` on the server by hand after a deploy that adds a migration.
 
+### 🧰 First-time server setup
+
+```bash
+php artisan migrate --force                              # tables; promotes the oldest admin to Super Admin on an old install
+php artisan db:seed --class=DemoUsersSeeder --force      # Super Admin / Admin / Cashier accounts
+php artisan db:seed --class=MenuSeeder --force           # the menu from pos/ (10 categories, 175 items)
+```
+
+Each seeder can run on its own and again safely: they update rows in place and never touch the store settings. (`php artisan db:seed --force` would also overwrite the store details with the sample receipt's.)
+
+For one-click demo logins, add `DEMO_LOGINS=true` to the server's `.env` — once, with no other `DEMO_LOGINS` line above it — then run `php artisan config:cache`.
+
 ---
 
 ## 🗂️ Project map
@@ -221,6 +274,8 @@ Set these in **GitHub → Settings → Secrets and variables → Actions**:
 | 🔗 Shared Inertia props | `app/Http/Middleware/HandleInertiaRequests.php` |
 | 🧮 Totals & numbering | `app/Support/OrderService.php` |
 | 🔳 Receipt QR | `app/Support/ZatcaQr.php` |
+| 🛡️ Roles | `app/Models/User.php` (`ROLES`, `isAdmin()`, `isSuperAdmin()`), `app/Http/Middleware/EnsureSuperAdmin.php`, `routes/web.php` |
+| 🔒 Sandbox VAT numbers | `config/zatca.php` (`seller_vat`, `buyer_vat`), `ZatcaSetting::fixedVat()` |
 | 🖨️ Printable receipt | `resources/views/orders/receipt.blade.php` |
 | 🌍 Translations | `lang/ar.json` (shared with Vue as the `translations` prop, used via `__()` / `useI18n()`) and `lang/ar/validation.php` |
 

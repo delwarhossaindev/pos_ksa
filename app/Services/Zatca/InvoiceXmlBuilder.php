@@ -191,7 +191,11 @@ class InvoiceXmlBuilder
             ['cbc:TaxInclusiveAmount', $this->amount($invoice->total_amount), $currency],
             ['cbc:AllowanceTotalAmount', '0.00', $currency],
             ['cbc:PrepaidAmount', '0.00', $currency],
-            ['cbc:PayableAmount', $this->amount($invoice->total_amount), $currency],
+            // BR-CO-16: payable = VAT-inclusive total − prepaid + rounding (a POS sale's ±0.01, see OrderInvoicer)
+            ...((float) $invoice->rounding_amount != 0.0
+                ? [['cbc:PayableRoundingAmount', $this->amount($invoice->rounding_amount), $currency]]
+                : []),
+            ['cbc:PayableAmount', $this->amount((float) $invoice->total_amount + (float) $invoice->rounding_amount), $currency],
         ]];
     }
 
