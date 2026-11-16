@@ -63,9 +63,13 @@ jobs:
     # The pages are Inertia + Vue: app.blade.php loads the compiled assets through
     # @vite, which reads public/build/manifest.json. public/build is gitignored, so it
     # is built here and uploaded by the next step.
+    # `npm install`, not `npm ci`: package-lock.json is written on Windows, where npm
+    # leaves out the dependencies of optional packages Windows skips (react for
+    # @laravel/multiplex, @emnapi/* for rolldown's wasm binding). On Linux `npm ci`
+    # then refuses the lock file as out of sync; `npm install` fills those in.
     - name: 🏗 Build assets
       run: |
-        npm ci
+        npm install --no-audit --no-fund
         npm run build
         test -f public/build/manifest.json
 
