@@ -45,6 +45,15 @@ class Setting extends Model
         return (string) ($values["{$key}_{$locale}"] ?? $values["{$key}_en"] ?? '');
     }
 
+    /**
+     * The shop's VAT number as printed on receipts and in their QR code. While ZATCA runs in the
+     * sandbox it is ZATCA's test seller VAT, so receipts match the e-invoices; otherwise the store's own.
+     */
+    public static function vatNumber(): string
+    {
+        return ZatcaSetting::fixedVat(ZatcaSetting::currentEnvironment(), 'seller') ?? (string) self::get('vat_number');
+    }
+
     public static function put(array $values): void
     {
         foreach ($values as $key => $value) {

@@ -60,7 +60,7 @@ async function voidOrder() {
                 </tr>
                 <tr v-if="order.table_no"><th>{{ __('Table no.') }}</th><td>{{ order.table_no }}</td></tr>
                 <tr v-if="order.note"><th>{{ __('Order note') }}</th><td>{{ order.note }}</td></tr>
-                <tr v-if="$page.props.auth.user.is_admin">
+                <tr v-if="$page.props.auth.user.is_superadmin">
                     <th>{{ __('ZATCA e-invoice') }}</th>
                     <td>
                         <Link v-if="einvoice" :href="route('admin.invoices.show', einvoice.id)">

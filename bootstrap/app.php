@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\ConvertArabicDigits;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsureSuperAdmin;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\SetLocale;
 use App\Models\Setting;
@@ -20,7 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [SetLocale::class, ConvertArabicDigits::class, HandleInertiaRequests::class]);
-        $middleware->alias(['admin' => EnsureAdmin::class]);
+        $middleware->alias(['admin' => EnsureAdmin::class, 'superadmin' => EnsureSuperAdmin::class]);
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('pos'));
     })

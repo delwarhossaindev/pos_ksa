@@ -21,6 +21,8 @@ const props = defineProps({
     environments: { type: Array, required: true },
     savedEnvironment: { type: String, default: null },
     sandboxOtp: { type: String, default: '' },
+    fixedSellerVat: { type: Object, default: () => ({}) },
+    storeVat: { type: String, default: '' },
 });
 
 const { t } = useI18n();
@@ -54,7 +56,14 @@ const INVOICE_TYPES = [
     ['0100', 'Simplified (B2C) only'],
 ];
 
-const SANDBOX_VAT = '399999999900003';
+// Sandbox: the seller VAT is ZATCA's test number and locked. Leaving it puts the store's own VAT back,
+// so a test number never follows the till into simulation or production.
+const lockedVat = computed(() => props.fixedSellerVat[form.environment] || null);
+const testVats = Object.values(props.fixedSellerVat);
+watch(() => form.environment, () => {
+    if (lockedVat.value) form.vat_number = lockedVat.value;
+    else if (testVats.includes(form.vat_number)) form.vat_number = props.storeVat;
+}, { immediate: true });
 
 async function save() {
     // Switching environment wipes the key, certificates and invoice counter of the old one.
@@ -153,10 +162,9 @@ const requestCompliance = () => otpForm.post(route('admin.zatca.compliance-csid'
             </Field>
             <div class="grid-2">
                 <Field id="vat_number" :label="__('VAT number')" :error="form.errors.vat_number">
-                    <input id="vat_number" v-model="form.vat_number" class="input num" inputmode="numeric" maxlength="15" placeholder="3XXXXXXXXXXXXX3" dir="ltr" required>
-                    <div v-if="form.environment === 'sandbox'" class="muted" style="font-size:.82rem;margin-top:.25rem">
-                        {{ __('Sandbox test VAT:') }}
-                        <a href="#" class="num" @click.prevent="form.vat_number = SANDBOX_VAT">{{ SANDBOX_VAT }}</a>
+                    <input id="vat_number" v-model="form.vat_number" class="input num" inputmode="numeric" maxlength="15" placeholder="3XXXXXXXXXXXXX3" dir="ltr" required :readonly="!!lockedVat">
+                    <div v-if="lockedVat" class="muted" style="font-size:.82rem;margin-top:.25rem">
+                        🔒 {{ __('Sandbox test VAT, set automatically. Switch to simulation or production to enter your own.') }}
                     </div>
                 </Field>
                 <Field id="crn" :label="__('Commercial registration (CR)')" :error="form.errors.crn">

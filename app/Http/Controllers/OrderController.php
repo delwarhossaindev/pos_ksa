@@ -47,8 +47,8 @@ class OrderController extends Controller
         $order->load('items', 'user', 'einvoice');
 
         return Inertia::render('Orders/Show', [
-            // ZATCA e-invoice for this sale (admins only — the e-invoice screens are admin-only).
-            'einvoice' => $request->user()->isAdmin() && $order->einvoice ? [
+            // ZATCA e-invoice for this sale (superadmins only — the e-invoice screens are theirs).
+            'einvoice' => $request->user()->isSuperAdmin() && $order->einvoice ? [
                 'id' => $order->einvoice->id,
                 'invoice_number' => $order->einvoice->invoice_number,
                 'zatca_status' => $order->einvoice->zatca_status,
@@ -90,7 +90,7 @@ class OrderController extends Controller
 
         $view = view('orders.receipt', [
             'order' => $order->load('items', 'user'),
-            'settings' => Setting::allValues(),
+            'settings' => ['vat_number' => Setting::vatNumber()] + Setting::allValues(),
             'qr' => ZatcaQr::dataUri($order),
             'autoPrint' => $request->boolean('print'),
         ]);

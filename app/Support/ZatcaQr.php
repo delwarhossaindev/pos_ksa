@@ -25,7 +25,7 @@ class ZatcaQr
 
         $fields = [
             1 => (string) Setting::get('store_name_ar') ?: (string) Setting::get('store_name_en'),
-            2 => (string) Setting::get('vat_number'),
+            2 => Setting::vatNumber(),
             3 => $order->created_at->copy()->utc()->format('Y-m-d\TH:i:s\Z'),
             4 => number_format((float) $order->total, 2, '.', ''),
             5 => number_format((float) $order->vat_amount, 2, '.', ''),

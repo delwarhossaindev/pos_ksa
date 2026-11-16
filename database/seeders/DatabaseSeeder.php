@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Setting;
-use App\Models\User;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -25,20 +24,6 @@ class DatabaseSeeder extends Seeder
             'receipt_footer_ar' => 'شكراً لزيارتكم',
         ]);
 
-        User::updateOrCreate(['email' => 'admin@pos.test'], [
-            'name' => 'المدير',
-            'password' => 'password',
-            'role' => 'admin',
-            'is_active' => true,
-        ]);
-
-        User::updateOrCreate(['email' => 'cashier@pos.test'], [
-            'name' => 'كاشير 1',
-            'password' => 'password',
-            'role' => 'cashier',
-            'is_active' => true,
-        ]);
-
-        $this->call(MenuSeeder::class);
+        $this->call([DemoUsersSeeder::class, MenuSeeder::class]);
     }
 }

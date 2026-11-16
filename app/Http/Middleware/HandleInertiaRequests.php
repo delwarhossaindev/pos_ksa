@@ -24,6 +24,7 @@ class HandleInertiaRequests extends Middleware
                     'name' => $user->name,
                     'role' => $user->role,
                     'is_admin' => $user->isAdmin(),
+                    'is_superadmin' => $user->isSuperAdmin(),
                 ] : null,
             ],
             'locale' => $locale,

@@ -17,6 +17,7 @@ const props = defineProps({
     environment: { type: String, required: true },
     canIssue: { type: Boolean, default: false },
     canSubmit: { type: Boolean, default: false },
+    fixedBuyerVat: { type: String, default: null }, // sandbox: ZATCA's test buyer VAT, locked
 });
 
 const form = useForm({
@@ -112,7 +113,8 @@ const submit = () => form.post(route('admin.invoices.store'), { preserveScroll: 
                         <input id="buyer_name" v-model="form.buyer_name" class="input" :required="standard">
                     </Field>
                     <Field id="buyer_vat_number" :label="__('VAT number')" :error="form.errors.buyer_vat_number">
-                        <input id="buyer_vat_number" v-model="form.buyer_vat_number" class="input num" inputmode="numeric" maxlength="15" placeholder="3XXXXXXXXXXXXX3" dir="ltr">
+                        <input id="buyer_vat_number" v-model="form.buyer_vat_number" class="input num" inputmode="numeric" maxlength="15" placeholder="3XXXXXXXXXXXXX3" dir="ltr" :readonly="!!fixedBuyerVat">
+                        <div v-if="fixedBuyerVat" class="muted" style="font-size:.82rem;margin-top:.25rem">🔒 {{ __('Sandbox test VAT, set automatically.') }}</div>
                     </Field>
                 </div>
                 <Field id="buyer_street" :label="__('Street')" :error="form.errors.buyer_street">

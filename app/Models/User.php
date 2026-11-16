@@ -17,7 +17,12 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
 
-    public const ROLES = ['admin', 'cashier'];
+    /**
+     * superadmin: everything, including Settings (store, users, ZATCA, e-invoices).
+     * admin:      the back office — reports, items, categories, customers, inventory, voids.
+     * cashier:    the till and their own orders.
+     */
+    public const ROLES = ['superadmin', 'admin', 'cashier'];
 
     protected function casts(): array
     {
@@ -33,8 +38,15 @@ class User extends Authenticatable
         return $this->hasMany(Order::class);
     }
 
+    /** Back-office access: admins and superadmins. */
     public function isAdmin(): bool
     {
-        return $this->role === 'admin';
+        return in_array($this->role, ['superadmin', 'admin'], true);
+    }
+
+    /** Settings access: store details, users, ZATCA onboarding and e-invoices. */
+    public function isSuperAdmin(): bool
+    {
+        return $this->role === 'superadmin';
     }
 }

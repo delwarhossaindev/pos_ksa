@@ -33,6 +33,12 @@ class ZatcaSetting extends Model
         return static::query()->value('environment') ?: (string) config('zatca.env');
     }
 
+    /** The fixed test VAT number of an environment ('seller' or 'buyer'), or null when it is typed by hand. */
+    public static function fixedVat(string $environment, string $party): ?string
+    {
+        return config("zatca.environments.{$environment}.{$party}_vat") ?: null;
+    }
+
     /**
      * Forget everything tied to the old environment's EGS onboarding: key, CSR, CSIDs, compliance results
      * and the invoice chain. A new environment is a new EGS unit, so its ICV/PIH chain starts again.

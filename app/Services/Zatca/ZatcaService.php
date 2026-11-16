@@ -70,7 +70,7 @@ class ZatcaService
         $results = [];
 
         foreach ($this->complianceDocumentTypes($setting) as $index => [$invoiceType, $documentType]) {
-            $invoice = $this->sampleInvoice($invoiceType, $documentType, $index + 1, $previousHash);
+            $invoice = $this->sampleInvoice($invoiceType, $documentType, $index + 1, $previousHash, $setting->environment);
             $signed = $this->sign($invoice, $setting, $certificate);
 
             $response = $this->api($setting)->complianceInvoice(
@@ -275,7 +275,7 @@ class ZatcaService
         return $types;
     }
 
-    private function sampleInvoice(string $invoiceType, string $documentType, int $icv, string $previousHash): Invoice
+    private function sampleInvoice(string $invoiceType, string $documentType, int $icv, string $previousHash, string $environment): Invoice
     {
         $invoice = new Invoice([
             'uuid' => (string) Str::uuid(),
@@ -289,7 +289,7 @@ class ZatcaService
             'payment_means' => '10',
             'currency' => 'SAR',
             'buyer_name' => 'Fatoora Samples LTD',
-            'buyer_vat_number' => '399999999800003',
+            'buyer_vat_number' => ZatcaSetting::fixedVat($environment, 'buyer') ?? '399999999800003',
             'buyer_street' => 'Salah Al-Din',
             'buyer_building_number' => '1111',
             'buyer_district' => 'Al-Murooj',

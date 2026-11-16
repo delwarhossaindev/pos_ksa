@@ -29,9 +29,10 @@ class ZatcaTest extends TestCase
         $this->seed(DatabaseSeeder::class);
     }
 
+    /** ZATCA onboarding and e-invoices are Settings screens: superadmin only. */
     private function admin(): User
     {
-        return User::where('role', 'admin')->first();
+        return User::where('role', 'superadmin')->first();
     }
 
     private function cashier(): User
@@ -98,17 +99,23 @@ class ZatcaTest extends TestCase
         return $setting->fresh();
     }
 
-    public function test_onboarding_pages_are_admin_only(): void
+    public function test_onboarding_pages_are_superadmin_only(): void
     {
-        $this->actingAs($this->cashier())->get(route('admin.zatca.edit'))->assertForbidden();
-        $this->actingAs($this->cashier())->get(route('admin.invoices.index'))->assertForbidden();
+        $plainAdmin = User::where('role', 'admin')->first();
+        foreach ([$this->cashier(), $plainAdmin] as $user) {
+            $this->actingAs($user)->get(route('admin.zatca.edit'))->assertForbidden();
+            $this->actingAs($user)->get(route('admin.invoices.index'))->assertForbidden();
+        }
 
         $this->actingAs($this->admin())->get(route('admin.zatca.edit'))
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Admin/Zatca')
                 ->where('status.saved', false)
-                ->where('setting.vat_number', '302256240800003') // prefilled from the store settings
+                ->where('setting.environment', 'sandbox')
+                ->where('setting.vat_number', '399999999900003') // sandbox: ZATCA's test seller VAT
+                ->where('fixedSellerVat', ['sandbox' => '399999999900003'])
+                ->where('storeVat', '302256240800003') // what simulation / production start from
                 ->has('environments', 3));
 
         $this->actingAs($this->admin())->get(route('admin.invoices.index'))
@@ -118,8 +125,9 @@ class ZatcaTest extends TestCase
 
     public function test_settings_validation(): void
     {
+        // Production: the VAT number is the seller's own and is validated.
         $this->actingAs($this->admin())
-            ->put(route('admin.zatca.update'), ['vat_number' => '123'] + $this->sellerData())
+            ->put(route('admin.zatca.update'), ['vat_number' => '123', 'environment' => 'production'] + $this->sellerData())
             ->assertSessionHasErrors('vat_number');
 
         $this->actingAs($this->admin())
@@ -225,6 +233,46 @@ class ZatcaTest extends TestCase
             'simulation' => ['simulation', 'PREZATCA-Code-Signing', 'https://gw-fatoora.zatca.gov.sa/e-invoicing/simulation/'],
             'production' => ['production', 'ZATCA-Code-Signing', 'https://gw-fatoora.zatca.gov.sa/e-invoicing/core/'],
         ];
+    }
+
+    public function test_sandbox_locks_shop_and_customer_vat_and_production_lets_them_change(): void
+    {
+        $invoice = fn (array $extra = []) => $this->actingAs($this->admin())->post(route('admin.invoices.store'), [
+            'invoice_type' => 'simplified',
+            'document_type' => 'invoice',
+            'issue_date' => now()->toDateString(),
+            'payment_means' => '10',
+            'buyer_name' => 'Customer Co',
+            'items' => [['name' => 'Shawarma', 'quantity' => 1, 'unit_price' => 20]],
+            ...$extra,
+        ])->assertSessionHasNoErrors();
+
+        // Sandbox: whatever is typed, the shop gets 399999999900003 and the customer 311111111111113.
+        $this->onboard('sandbox');
+        $this->actingAs($this->admin())->put(route('admin.zatca.update'), ['vat_number' => '300000000000003'] + $this->sellerData());
+        $this->assertSame('399999999900003', ZatcaSetting::current()->vat_number);
+
+        $this->actingAs($this->admin())->get(route('admin.invoices.create'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('fixedBuyerVat', '311111111111113')
+                ->where('defaults.buyer_vat_number', '311111111111113'));
+
+        $invoice(['buyer_vat_number' => '300000000000003']);
+        $sandboxInvoice = Invoice::latest('id')->firstOrFail();
+        $this->assertSame('311111111111113', $sandboxInvoice->buyer_vat_number);
+        $this->assertStringContainsString('<cbc:CompanyID>311111111111113</cbc:CompanyID>', $sandboxInvoice->signed_xml);
+        $this->assertStringContainsString('<cbc:CompanyID>399999999900003</cbc:CompanyID>', $sandboxInvoice->signed_xml);
+
+        // Production: both are the real numbers, typed by hand.
+        $this->onboard('production');
+        $this->actingAs($this->admin())->put(route('admin.zatca.update'), ['environment' => 'production', 'vat_number' => '300000000000003'] + $this->sellerData());
+        $this->assertSame('300000000000003', ZatcaSetting::current()->vat_number);
+
+        $this->actingAs($this->admin())->get(route('admin.invoices.create'))
+            ->assertInertia(fn (Assert $page) => $page->where('fixedBuyerVat', null)->where('defaults.buyer_vat_number', ''));
+
+        $invoice(['buyer_vat_number' => '310000000000003']);
+        $this->assertSame('310000000000003', Invoice::latest('id')->firstOrFail()->buyer_vat_number);
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('environments')]

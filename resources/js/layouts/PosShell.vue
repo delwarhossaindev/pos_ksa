@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { money } from '@/lib/format';
 import { confirmDialog } from '@/lib/dialog';
 import { printUrl } from '@/lib/printer';
+import { ROLE_LABELS } from '@/lib/roles';
 import { shell } from '@/lib/shell';
 import { showToast, toastState } from '@/lib/toast';
 
@@ -122,12 +123,13 @@ async function closeSession() {
 // ---------- bottom bar: exactly the six buttons of the reference ----------
 const FOOTER = [
     { label: 'Reports', route: 'admin.reports', active: ['admin.reports'], admin: true },
-    { label: 'Settings', route: 'admin.settings.edit', active: ['admin.settings.*', 'admin.users.*', 'admin.zatca.*', 'admin.invoices.*'], admin: true },
+    { label: 'Settings', route: 'admin.settings.edit', active: ['admin.settings.*', 'admin.users.*', 'admin.zatca.*', 'admin.invoices.*'], admin: true, superadmin: true },
     { label: 'Item List', route: 'admin.products.index', active: ['admin.products.*', 'admin.categories.*'], admin: true },
     { label: 'Customers', route: 'admin.customers.index', active: ['admin.customers.*'], admin: true },
     { label: 'Orders', route: 'orders.index', active: ['orders.*'], admin: false },
     { label: 'Inventory', route: 'admin.inventory.index', active: ['admin.inventory.*'], admin: true },
 ];
+const locked = (item) => (item.superadmin && !user.value.is_superadmin) || (item.admin && !user.value.is_admin);
 // route().current() reads window.location → depend on page.url so it re-evaluates after each visit.
 const isActive = (patterns) => page.url && patterns.some((p) => route().current(p));
 const footerScroll = ref(null);
@@ -177,7 +179,7 @@ const generalError = computed(() => page.props.errors?.user || page.props.errors
 
             <div class="tp-spacer" />
 
-            <button v-if="user.is_admin" type="button" class="tp-hicon" :title="__('Settings')" @click="router.visit(route('admin.settings.edit'))">
+            <button v-if="user.is_superadmin" type="button" class="tp-hicon" :title="__('Settings')" @click="router.visit(route('admin.settings.edit'))">
                 <PosIcon name="tools" />
             </button>
 
@@ -210,7 +212,7 @@ const generalError = computed(() => page.props.errors?.user || page.props.errors
                     <span class="tp-hbtn-text one">{{ user.name }}</span>
                 </button>
                 <div v-if="menuOpen === 'user'" class="tp-pop tp-pop-user">
-                    <div class="tp-pop-head">{{ user.name }} · {{ user.is_admin ? __('Administrator') : __('Cashier') }}</div>
+                    <div class="tp-pop-head">{{ user.name }} · {{ __(ROLE_LABELS[user.role] || user.role) }}</div>
                     <button type="button" class="tp-pop-item" @click="switchLanguage">
                         <PosIcon name="globe" /> {{ $page.props.locale === 'ar' ? 'English' : 'العربية' }}
                     </button>
@@ -248,11 +250,11 @@ const generalError = computed(() => page.props.errors?.user || page.props.errors
 
                 <template v-for="item in FOOTER" :key="item.route">
                     <button
-                        v-if="item.admin && !user.is_admin"
+                        v-if="locked(item)"
                         type="button"
                         class="tp-footer-item"
                         disabled
-                        :title="__('Administrator only')"
+                        :title="item.superadmin ? __('Super Admin only') : __('Administrator only')"
                     >
                         {{ __(item.label) }}
                     </button>

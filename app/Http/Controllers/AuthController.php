@@ -12,8 +12,9 @@ use Inertia\Response;
 
 class AuthController extends Controller
 {
-    /** Seeded accounts offered as one-click buttons when DEMO_LOGINS=true (see DatabaseSeeder). */
+    /** Seeded accounts offered as one-click buttons when DEMO_LOGINS=true (see DemoUsersSeeder). */
     private const DEMO_ACCOUNTS = [
+        ['role' => 'superadmin', 'email' => 'superadmin@pos.test', 'password' => 'password'],
         ['role' => 'admin', 'email' => 'admin@pos.test', 'password' => 'password'],
         ['role' => 'cashier', 'email' => 'cashier@pos.test', 'password' => 'password'],
     ];

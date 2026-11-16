@@ -34,7 +34,7 @@ class ZatcaController extends Controller
             'environment' => config('zatca.env'),
             // Prefill from the store settings so the admin types as little as possible.
             'seller_name' => Setting::get('store_name_ar') ?: Setting::get('store_name_en'),
-            'vat_number' => Setting::get('vat_number'),
+            'vat_number' => ZatcaSetting::fixedVat(config('zatca.env'), 'seller') ?? Setting::get('vat_number'),
             'crn' => Setting::get('cr_number'),
             'egs_name' => 'EGS1-'.Str::upper(Str::random(6)),
             'egs_model' => '1',
@@ -80,11 +80,20 @@ class ZatcaController extends Controller
             'savedEnvironment' => $setting->exists ? $setting->environment : null,
             'environments' => collect(config('zatca.environments'))->map(fn ($e, $key) => ['value' => $key, 'label' => $e['label'], 'url' => $e['url']])->values(),
             'sandboxOtp' => config('zatca.sandbox_otp'),
+            // Environment → its locked seller VAT (sandbox); the store VAT goes back in when leaving it.
+            'fixedSellerVat' => collect(config('zatca.environments'))->keys()
+                ->mapWithKeys(fn ($env) => [$env => ZatcaSetting::fixedVat($env, 'seller')])->filter(),
+            'storeVat' => (string) Setting::get('vat_number'),
         ]);
     }
 
     public function update(Request $request): RedirectResponse
     {
+        // Sandbox: the seller VAT is always ZATCA's test number, whatever was sent.
+        if ($fixed = ZatcaSetting::fixedVat((string) $request->input('environment'), 'seller')) {
+            $request->merge(['vat_number' => $fixed]);
+        }
+
         $data = $request->validate([
             'environment' => ['required', Rule::in(array_keys(config('zatca.environments')))],
             'seller_name' => ['required', 'string', 'max:255'],

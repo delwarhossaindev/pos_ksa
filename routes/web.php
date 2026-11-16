@@ -41,26 +41,30 @@ Route::middleware('auth')->group(function () {
         Route::patch('products/{product}/toggle', [InventoryController::class, 'toggle'])->name('products.toggle');
         Route::resource('categories', CategoryController::class)->except('show');
         Route::resource('products', ProductController::class)->except('show');
-        Route::resource('users', UserController::class)->except('show');
-        Route::get('settings', [SettingController::class, 'edit'])->name('settings.edit');
-        Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
 
-        // ZATCA Phase 2 onboarding (Settings → ZATCA)
-        Route::prefix('zatca')->name('zatca.')->controller(ZatcaController::class)->group(function () {
-            Route::get('/', 'edit')->name('edit');
-            Route::put('/', 'update')->name('update');
-            Route::post('csr', 'generateCsr')->name('csr');
-            Route::post('compliance-csid', 'complianceCsid')->name('compliance-csid');
-            Route::post('compliance-checks', 'complianceChecks')->name('compliance-checks');
-            Route::post('production-csid', 'productionCsid')->name('production-csid');
+        // Settings (Store · Users · ZATCA · E-Invoices): superadmin only.
+        Route::middleware('superadmin')->group(function () {
+            Route::resource('users', UserController::class)->except('show');
+            Route::get('settings', [SettingController::class, 'edit'])->name('settings.edit');
+            Route::put('settings', [SettingController::class, 'update'])->name('settings.update');
+
+            // ZATCA Phase 2 onboarding (Settings → ZATCA)
+            Route::prefix('zatca')->name('zatca.')->controller(ZatcaController::class)->group(function () {
+                Route::get('/', 'edit')->name('edit');
+                Route::put('/', 'update')->name('update');
+                Route::post('csr', 'generateCsr')->name('csr');
+                Route::post('compliance-csid', 'complianceCsid')->name('compliance-csid');
+                Route::post('compliance-checks', 'complianceChecks')->name('compliance-checks');
+                Route::post('production-csid', 'productionCsid')->name('production-csid');
+            });
+
+            // ZATCA e-invoices, credit and debit notes (Settings → E-Invoices)
+            Route::post('invoices/submit-pending', [InvoiceController::class, 'submitPending'])->name('invoices.submit-pending');
+            Route::resource('invoices', InvoiceController::class)->only(['index', 'create', 'store', 'show']);
+            Route::post('invoices/{invoice}/submit', [InvoiceController::class, 'submit'])->name('invoices.submit');
+            Route::get('invoices/{invoice}/xml/{version?}', [InvoiceController::class, 'xml'])
+                ->whereIn('version', ['signed', 'cleared'])
+                ->name('invoices.xml');
         });
-
-        // ZATCA e-invoices, credit and debit notes (Settings → E-Invoices)
-        Route::post('invoices/submit-pending', [InvoiceController::class, 'submitPending'])->name('invoices.submit-pending');
-        Route::resource('invoices', InvoiceController::class)->only(['index', 'create', 'store', 'show']);
-        Route::post('invoices/{invoice}/submit', [InvoiceController::class, 'submit'])->name('invoices.submit');
-        Route::get('invoices/{invoice}/xml/{version?}', [InvoiceController::class, 'xml'])
-            ->whereIn('version', ['signed', 'cleared'])
-            ->name('invoices.xml');
     });
 });

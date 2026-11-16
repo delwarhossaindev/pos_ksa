@@ -45,6 +45,7 @@ const submit = () => {
             <select id="role" v-model="form.role" class="input">
                 <option value="cashier">{{ __('Cashier') }}</option>
                 <option value="admin">{{ __('Administrator') }}</option>
+                <option value="superadmin">{{ __('Super Admin') }}</option>
             </select>
         </Field>
         <div class="grid-2">

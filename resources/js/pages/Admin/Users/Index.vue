@@ -5,6 +5,7 @@ import AdminTabs from '@/components/AdminTabs.vue';
 import { SETTINGS_TABS } from '@/lib/settingsTabs';
 import { useI18n } from '@/lib/i18n';
 import { confirmDialog } from '@/lib/dialog';
+import { ROLE_LABELS } from '@/lib/roles';
 
 defineOptions({ layout: PosShell });
 defineProps({ users: { type: Array, required: true } });
@@ -46,7 +47,7 @@ async function destroy(user) {
                 <tr v-for="u in users" :key="u.id">
                     <td>{{ u.name }}</td>
                     <td dir="ltr" style="text-align:start">{{ u.email }}</td>
-                    <td><span class="badge" :class="{ 'badge-primary': u.role === 'admin' }">{{ u.role === 'admin' ? __('Administrator') : __('Cashier') }}</span></td>
+                    <td><span class="badge" :class="{ 'badge-primary': u.role !== 'cashier', 'badge-gold': u.role === 'superadmin' }">{{ __(ROLE_LABELS[u.role] || u.role) }}</span></td>
                     <td><span class="badge" :class="u.is_active ? 'badge-success' : 'badge-danger'">{{ u.is_active ? __('Active') : __('Inactive') }}</span></td>
                     <td>
                         <div class="actions">

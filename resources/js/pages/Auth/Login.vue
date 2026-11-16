@@ -2,6 +2,7 @@
 import { Head, useForm } from '@inertiajs/vue3';
 import LangSwitch from '@/components/LangSwitch.vue';
 import Field from '@/components/Field.vue';
+import { ROLE_LABELS } from '@/lib/roles';
 
 defineProps({
     demoAccounts: { type: Array, default: () => [] },
@@ -56,7 +57,7 @@ function loginAs(account) {
                         :disabled="form.processing"
                         @click="loginAs(account)"
                     >
-                        <span class="demo-role">{{ account.role === 'admin' ? __('Administrator') : __('Cashier') }}</span>
+                        <span class="demo-role">{{ __(ROLE_LABELS[account.role] || account.role) }}</span>
                         <span class="demo-name">{{ account.name }}</span>
                         <span class="demo-cred" dir="ltr">{{ account.email }}</span>
                         <span class="demo-cred">{{ __('Password') }}: <bdi dir="ltr">{{ account.password }}</bdi></span>

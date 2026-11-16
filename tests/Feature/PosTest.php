@@ -31,6 +31,11 @@ class PosTest extends TestCase
         return User::where('role', 'cashier')->first();
     }
 
+    private function superadmin(): User
+    {
+        return User::where('role', 'superadmin')->first();
+    }
+
     public function test_guest_is_redirected_to_login(): void
     {
         $this->get('/')->assertRedirect(route('login'));
@@ -42,14 +47,24 @@ class PosTest extends TestCase
         config(['app.demo_logins' => true]);
         $this->get(route('login'))->assertInertia(fn (Assert $page) => $page
             ->component('Auth/Login')
-            ->has('demoAccounts', 2)
-            ->where('demoAccounts.0.email', 'admin@pos.test')
-            ->where('demoAccounts.0.role', 'admin')
-            ->where('demoAccounts.1.email', 'cashier@pos.test'));
+            ->has('demoAccounts', 3)
+            ->where('demoAccounts.0.email', 'superadmin@pos.test')
+            ->where('demoAccounts.0.role', 'superadmin')
+            ->where('demoAccounts.1.email', 'admin@pos.test')
+            ->where('demoAccounts.1.role', 'admin')
+            ->where('demoAccounts.2.email', 'cashier@pos.test')
+            ->where('demoAccounts.2.role', 'cashier'));
+
+        // Each button really signs in with its role.
+        foreach (['superadmin', 'admin', 'cashier'] as $role) {
+            $this->post(route('login'), ['email' => "$role@pos.test", 'password' => 'password'])->assertRedirect(route('pos'));
+            $this->assertSame($role, auth()->user()->role);
+            $this->post(route('logout'));
+        }
 
         // A deactivated account is not offered.
         $this->cashier()->update(['is_active' => false]);
-        $this->get(route('login'))->assertInertia(fn (Assert $page) => $page->has('demoAccounts', 1));
+        $this->get(route('login'))->assertInertia(fn (Assert $page) => $page->has('demoAccounts', 2));
 
         // Off (the production default): no credentials are sent to the browser at all.
         config(['app.demo_logins' => false]);
@@ -194,7 +209,8 @@ class PosTest extends TestCase
         $this->actingAs($this->cashier())->get(route('orders.receipt', $id))
             ->assertOk()
             ->assertSee('فاتورة ضريبية مبسطة')
-            ->assertSee('302256240800003')
+            ->assertSee('399999999900003') // ZATCA_ENV=sandbox: the shop's VAT is ZATCA's test number
+            ->assertDontSee('302256240800003')
             ->assertSee('صحن بطاطس كبير')
             ->assertSee('data:image/svg+xml;base64', false);
 
@@ -208,7 +224,12 @@ class PosTest extends TestCase
             $i += 2 + $len;
         }
         $this->assertSame('مطعم شاورما علوش للوجبات السريعة', $fields[1]);
-        $this->assertSame('302256240800003', $fields[2]);
+        $this->assertSame('399999999900003', $fields[2]);
+
+        // Production: the store's own VAT number from Settings.
+        config(['zatca.env' => 'production']);
+        $this->actingAs($this->cashier())->get(route('orders.receipt', $id))->assertSee('302256240800003');
+        $this->assertStringContainsString('302256240800003', base64_decode(ZatcaQr::payload(Order::find($id))));
         $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $fields[3]);
         $this->assertSame('22.00', $fields[4]);
         $this->assertSame('2.87', $fields[5]);
@@ -252,13 +273,19 @@ class PosTest extends TestCase
                 route('admin.products.index'),
                 route('admin.products.create'),
                 route('admin.products.edit', $p),
+            ];
+            foreach ($urls as $url) {
+                $this->actingAs($this->admin())->withSession(['locale' => $locale])->get($url)->assertOk();
+            }
+
+            $settingsUrls = [
                 route('admin.users.index'),
                 route('admin.users.create'),
                 route('admin.users.edit', $this->cashier()),
                 route('admin.settings.edit'),
             ];
-            foreach ($urls as $url) {
-                $this->actingAs($this->admin())->withSession(['locale' => $locale])->get($url)->assertOk();
+            foreach ($settingsUrls as $url) {
+                $this->actingAs($this->superadmin())->withSession(['locale' => $locale])->get($url)->assertOk();
             }
         }
     }
@@ -302,20 +329,22 @@ class PosTest extends TestCase
         ])->assertRedirect();
         $this->assertDatabaseHas('categories', ['name_ar' => 'إضافات']);
 
-        $this->actingAs($admin)->post(route('admin.users.store'), [
+        $super = $this->superadmin();
+
+        $this->actingAs($super)->post(route('admin.users.store'), [
             'name' => 'Cashier 2', 'email' => 'c2@pos.test', 'role' => 'cashier',
             'password' => 'secret12', 'password_confirmation' => 'secret12', 'is_active' => 1,
         ])->assertRedirect();
         $this->assertDatabaseHas('users', ['email' => 'c2@pos.test', 'role' => 'cashier']);
 
-        // An admin cannot demote or deactivate themselves.
-        $this->actingAs($admin)->put(route('admin.users.update', $admin), [
-            'name' => 'Admin', 'email' => $admin->email, 'role' => 'cashier',
+        // A superadmin cannot demote or deactivate themselves.
+        $this->actingAs($super)->put(route('admin.users.update', $super), [
+            'name' => 'Super', 'email' => $super->email, 'role' => 'cashier',
         ])->assertRedirect();
-        $this->assertTrue($admin->fresh()->isAdmin());
-        $this->assertTrue($admin->fresh()->is_active);
+        $this->assertTrue($super->fresh()->isSuperAdmin());
+        $this->assertTrue($super->fresh()->is_active);
 
-        $this->actingAs($admin)->put(route('admin.settings.update'), [
+        $this->actingAs($super)->put(route('admin.settings.update'), [
             'store_name_en' => 'New Name', 'store_name_ar' => 'اسم جديد', 'vat_rate' => 15,
             'currency_en' => 'SAR', 'currency_ar' => 'ر.س',
         ])->assertRedirect();

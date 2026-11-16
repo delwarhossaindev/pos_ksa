@@ -42,9 +42,9 @@ class UserController extends Controller
     {
         $data = $this->validated($request, $user);
 
-        // Never let an admin lock themselves out.
+        // Never let a superadmin (the only role that reaches this screen) lock themselves out.
         if ($user->is($request->user())) {
-            $data['role'] = 'admin';
+            $data['role'] = 'superadmin';
             $data['is_active'] = true;
         }
 

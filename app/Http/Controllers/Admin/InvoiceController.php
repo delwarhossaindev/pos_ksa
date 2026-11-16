@@ -91,6 +91,8 @@ class InvoiceController extends Controller
     public function create(Request $request): Response|RedirectResponse
     {
         $setting = ZatcaSetting::current();
+        $environment = ZatcaSetting::currentEnvironment();
+        $fixedBuyerVat = ZatcaSetting::fixedVat($environment, 'buyer');
         $documentType = in_array($request->query('document_type'), array_keys(Invoice::DOCUMENT_CODES), true)
             ? $request->query('document_type') : 'invoice';
 
@@ -136,9 +138,14 @@ class InvoiceController extends Controller
             $source = ['type' => 'order', 'id' => $order->id, 'label' => $order->invoice_no, 'total' => (float) $order->total];
         }
 
+        if ($fixedBuyerVat) {
+            $defaults['buyer_vat_number'] = $fixedBuyerVat;
+        }
+
         $types = $setting?->invoice_types ?? '1100';
 
         return Inertia::render('Admin/Invoices/Create', [
+            'fixedBuyerVat' => $fixedBuyerVat,
             'defaults' => $defaults,
             'source' => $source,
             'allowedTypes' => array_values(array_filter([
@@ -147,7 +154,7 @@ class InvoiceController extends Controller
             ])),
             'paymentMeans' => collect(Invoice::PAYMENT_MEANS)->map(fn ($label, $code) => ['value' => (string) $code, 'label' => $label])->values(),
             'vatPercent' => self::VAT_PERCENT,
-            'environment' => ZatcaSetting::currentEnvironment(),
+            'environment' => $environment,
             'canIssue' => (bool) $setting?->signingCertificate(),
             'canSubmit' => (bool) $setting?->hasProductionCsid(),
         ]);
@@ -156,6 +163,11 @@ class InvoiceController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $standard = $request->input('invoice_type') === Invoice::TYPE_STANDARD;
+
+        // Sandbox: every customer gets ZATCA's test buyer VAT number, whatever was sent.
+        if ($fixedBuyerVat = ZatcaSetting::fixedVat(ZatcaSetting::currentEnvironment(), 'buyer')) {
+            $request->merge(['buyer_vat_number' => $fixedBuyerVat]);
+        }
 
         $data = $request->validate([
             'invoice_type' => ['required', Rule::in([Invoice::TYPE_STANDARD, Invoice::TYPE_SIMPLIFIED])],

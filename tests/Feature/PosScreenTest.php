@@ -119,11 +119,13 @@ class PosScreenTest extends TestCase
 
     public function test_till_header_data_is_shared_on_every_screen(): void
     {
-        $id = $this->sell($this->admin(), [['product_id' => Product::first()->id, 'quantity' => 1]]);
+        // Settings is superadmin-only, so a superadmin walks every bottom-bar screen.
+        $superadmin = User::where('role', 'superadmin')->first();
+        $id = $this->sell($superadmin, [['product_id' => Product::first()->id, 'quantity' => 1]]);
 
         // Bottom-bar screens render inside the same frame, so the header needs its data there too.
         foreach (['orders.index', 'admin.reports', 'admin.inventory.index', 'admin.customers.index', 'admin.products.index', 'admin.settings.edit'] as $name) {
-            $this->actingAs($this->admin())->get(route($name))->assertOk()->assertInertia(fn (Assert $page) => $page
+            $this->actingAs($superadmin)->get(route($name))->assertOk()->assertInertia(fn (Assert $page) => $page
                 ->where('todayCount', 1)
                 ->where('recentOrders.0.id', $id)
                 ->where('lastOrder.id', $id)
