@@ -53,6 +53,9 @@
 }
 .tp-hbtn:hover { background: rgba(255, 255, 255, .08); }
 .tp-hbtn.static { cursor: default; }
+/* Header language switch: outlined in gold so it reads as a toggle; the label stays visible on small screens */
+.tp-lang { border: 1px solid rgba(201, 162, 39, .7); padding: .35rem .75rem; }
+.tp-lang-text { font-size: 1rem; font-weight: 700; white-space: nowrap; }
 .tp-hbtn.static:hover { background: none; }
 .tp-hbtn-text { font-size: .92rem; line-height: 1.15; text-align: start; white-space: nowrap; }
 .tp-hbtn-text.one { font-size: 1rem; }

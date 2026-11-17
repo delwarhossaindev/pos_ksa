@@ -179,6 +179,12 @@ const generalError = computed(() => page.props.errors?.user || page.props.errors
 
             <div class="tp-spacer" />
 
+            <!-- Language: one tap for every role, shows the language it switches to -->
+            <button type="button" class="tp-hbtn tp-lang" :title="__('Language')" @click="switchLanguage">
+                <PosIcon name="globe" />
+                <span class="tp-lang-text" :lang="$page.props.locale === 'ar' ? 'en' : 'ar'">{{ $page.props.locale === 'ar' ? 'English' : 'العربية' }}</span>
+            </button>
+
             <button v-if="user.is_superadmin" type="button" class="tp-hicon" :title="__('Settings')" @click="router.visit(route('admin.settings.edit'))">
                 <PosIcon name="tools" />
             </button>
