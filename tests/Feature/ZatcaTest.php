@@ -289,6 +289,79 @@ class ZatcaTest extends TestCase
         $this->assertSame(number_format((float) $order->total, 2), $payable($invoice));
     }
 
+    /** Swap in a fresh fake so it is the only one answering ZATCA calls. */
+    private function zatca(bool $up): void
+    {
+        Http::swap(new \Illuminate\Http\Client\Factory(app('events')));
+        Http::fake($up
+            ? ['*/invoices/reporting/single' => Http::response(['validationResults' => ['status' => 'PASS', 'errorMessages' => [], 'warningMessages' => []], 'reportingStatus' => 'REPORTED'])]
+            : ['*' => Http::response(['message' => 'Service unavailable'], 503)]);
+    }
+
+    public function test_voiding_an_e_invoiced_sale_issues_and_reports_a_credit_note(): void
+    {
+        $this->onboard();
+        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();
+        $order = $this->sale([['product_id' => $fries->id, 'quantity' => 1]], ['discount' => 12]); // 10.00, rounding −0.01
+        $invoice = $order->einvoice;
+
+        $this->actingAs($this->admin())->post(route('admin.orders.void', $order))
+            ->assertSessionHas('status', fn ($s) => str_contains($s, 'CRN-000001'));
+
+        $credit = Invoice::where('document_type', 'credit')->firstOrFail();
+        $this->assertSame('CRN-000001', $credit->invoice_number);
+        $this->assertSame($invoice->invoice_number, $credit->original_invoice_number);
+        $this->assertSame($order->id, $credit->order_id);
+        $this->assertSame((int) $invoice->icv + 1, (int) $credit->icv);
+        $this->assertSame($invoice->invoice_hash, $credit->previous_invoice_hash);
+        $this->assertSame('REPORTED', $credit->zatca_status);
+        // Same lines and amount: it cancels exactly what was charged.
+        $this->assertSame(number_format((float) $invoice->total_amount, 2), number_format((float) $credit->total_amount, 2));
+        $this->assertSame(number_format((float) $invoice->rounding_amount, 2), number_format((float) $credit->rounding_amount, 2));
+        $this->assertStringContainsString('<cbc:InvoiceTypeCode name="0200000">381</cbc:InvoiceTypeCode>', $credit->signed_xml);
+        $this->assertStringContainsString('<cbc:PayableAmount currencyID="SAR">10.00</cbc:PayableAmount>', $credit->signed_xml);
+        $this->assertStringContainsString($invoice->invoice_number, $credit->signed_xml); // billing reference
+
+        // Voiding again does not credit twice; a sale without an e-invoice gets none.
+        $this->actingAs($this->admin())->post(route('admin.orders.void', $order));
+        $this->assertSame(1, Invoice::where('document_type', 'credit')->count());
+        $this->assertTrue($order->fresh()->isVoid());
+    }
+
+    public function test_e_invoices_that_failed_to_report_are_retried_by_the_next_sale_and_the_hourly_command(): void
+    {
+        $this->onboard();
+        $fries = Product::where('name_en', 'Fries Plate Large')->firstOrFail();
+
+        // ZATCA is down for two sales: both are signed (Phase 2 QR on the receipt) but not reported.
+        $this->zatca(up: false);
+        $first = $this->sale([['product_id' => $fries->id, 'quantity' => 1]])->einvoice;
+        $second = $this->sale([['product_id' => $fries->id, 'quantity' => 2]])->einvoice;
+        $this->assertNotContains($first->fresh()->zatca_status, Invoice::ACCEPTED);
+        $this->assertNotContains($second->fresh()->zatca_status, Invoice::ACCEPTED);
+
+        // Back up: the next sale reports itself and catches up on the two before it.
+        $this->zatca(up: true);
+        $third = $this->sale([['product_id' => $fries->id, 'quantity' => 3]])->einvoice;
+        foreach ([$first, $second, $third] as $invoice) {
+            $this->assertSame('REPORTED', $invoice->fresh()->zatca_status);
+        }
+
+        // Quiet hours: the scheduled command does the same.
+        $this->zatca(up: false);
+        $fourth = $this->sale([['product_id' => $fries->id, 'quantity' => 1]])->einvoice;
+        $this->zatca(up: true);
+        $this->artisan('zatca:submit-pending')->expectsOutputToContain('1 accepted')->assertSuccessful();
+        $this->assertSame('REPORTED', $fourth->fresh()->zatca_status);
+
+        // A validation rejection is not resent by itself (it needs a correction), only with --all.
+        $fourth->update(['zatca_status' => 'NOT_REPORTED']);
+        $this->artisan('zatca:submit-pending')->expectsOutputToContain('Submitted 0 invoice(s)')->assertSuccessful();
+        $this->artisan('zatca:submit-pending --all')->expectsOutputToContain('1 accepted')->assertSuccessful();
+        $this->assertTrue(\Illuminate\Support\Facades\Schedule::events() !== []
+            && collect(\Illuminate\Support\Facades\Schedule::events())->contains(fn ($e) => str_contains($e->command, 'zatca:submit-pending')));
+    }
+
     public function test_certificate_serial_converts_from_hex_without_bcmath(): void
     {
         $this->assertSame('0', \App\Services\Zatca\Certificate::hexToDecimal('0'));

@@ -35,6 +35,7 @@
         .item-note { font-size: 10px; font-style: italic; }
         .grand { font-size: 15px; font-weight: 700; }
         .order-no { border: 2px solid #000; border-radius: 6px; padding: 4px; margin: 8px 0; }
+        .logo { display: block; width: 34mm; height: auto; margin: 0 auto 2mm; }
         .qr img { width: 38mm; height: 38mm; image-rendering: pixelated; }
         .void { border: 3px solid #c00; color: #c00; font-size: 20px; font-weight: 700; padding: 4px; margin: 6px 0; }
         .toolbar { text-align: center; margin: 10px; }
@@ -53,6 +54,9 @@
 
 <div class="receipt">
     <div class="c">
+        @if ($logo = \App\Models\Setting::logoUrl())
+            <img class="logo" src="{{ $logo }}" alt="{{ $settings['store_name_en'] }}">
+        @endif
         <div class="b lg">{{ $settings['store_name_ar'] }}</div>
         <div class="b">{{ $settings['store_name_en'] }}</div>
         @if ($settings['address_ar'])<div>{{ $settings['address_ar'] }}</div>@endif

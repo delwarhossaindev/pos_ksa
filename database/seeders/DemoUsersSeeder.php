@@ -9,6 +9,9 @@ use Illuminate\Database\Seeder;
  * The demo accounts behind the one-click login buttons (DEMO_LOGINS=true).
  * Runs on its own on a live demo server without touching the menu or store settings:
  *   php artisan db:seed --class=DemoUsersSeeder --force
+ *
+ * The password "password" is only set when an account is first created: running the seeder again
+ * fixes names, roles and active flags but never resets a password that was changed.
  */
 class DemoUsersSeeder extends Seeder
 {
@@ -21,7 +24,12 @@ class DemoUsersSeeder extends Seeder
         ];
 
         foreach ($accounts as $email => $account) {
-            User::updateOrCreate(['email' => $email], [...$account, 'password' => 'password', 'is_active' => true]);
+            $user = User::firstOrNew(['email' => $email]);
+            $user->fill([...$account, 'is_active' => true]);
+            if (! $user->exists) {
+                $user->password = 'password';
+            }
+            $user->save();
         }
     }
 }

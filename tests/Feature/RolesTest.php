@@ -88,6 +88,19 @@ class RolesTest extends TestCase
         }
     }
 
+    public function test_seeding_again_never_resets_a_changed_password(): void
+    {
+        $super = $this->as('superadmin');
+        $super->update(['password' => 'a-strong-secret', 'role' => 'cashier', 'is_active' => false]);
+
+        $this->seed(\Database\Seeders\DemoUsersSeeder::class);
+
+        $super->refresh();
+        $this->assertTrue(\Illuminate\Support\Facades\Hash::check('a-strong-secret', $super->password));
+        $this->assertSame('superadmin', $super->role); // role and active flag are put back
+        $this->assertTrue($super->is_active);
+    }
+
     public function test_existing_install_gets_its_first_admin_promoted_once(): void
     {
         $migration = require database_path('migrations/2026_11_17_000001_promote_first_admin_to_superadmin.php');

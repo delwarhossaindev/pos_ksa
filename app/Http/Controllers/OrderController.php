@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Setting;
+use App\Services\Zatca\OrderInvoicer;
 use App\Support\Arabic;
 use App\Support\Tafqeet;
 use App\Support\ZatcaQr;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Inertia\Inertia;
 use Inertia\Response;
+use Throwable;
 
 class OrderController extends Controller
 {
@@ -106,10 +108,28 @@ class OrderController extends Controller
         return $view;
     }
 
-    public function void(Order $order): RedirectResponse
+    /**
+     * Voids a sale. If it was e-invoiced, a ZATCA credit note cancels the invoice (signed now, reported
+     * after the response); a ZATCA problem never blocks the void, it is shown instead.
+     */
+    public function void(Order $order, OrderInvoicer $invoicer): RedirectResponse
     {
-        if (! $order->isVoid()) {
-            $order->update(['status' => 'void']);
+        if ($order->isVoid()) {
+            return back()->with('status', __('Order voided.'));
+        }
+
+        $order->update(['status' => 'void']);
+
+        try {
+            if ($credit = $invoicer->credit($order)) {
+                defer(fn () => $invoicer->report($credit));
+
+                return back()->with('status', __('Order voided. Credit note :no cancels its e-invoice with ZATCA.', ['no' => $credit->invoice_number]));
+            }
+        } catch (Throwable $e) {
+            report($e);
+
+            return back()->with('error', __('Order voided, but the credit note for its e-invoice could not be created: :error', ['error' => $e->getMessage()]));
         }
 
         return back()->with('status', __('Order voided.'));

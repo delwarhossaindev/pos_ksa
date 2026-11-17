@@ -70,7 +70,12 @@ class OrderInvoicer
         });
     }
 
-    /** Report to ZATCA (needs the Production CSID). Failures stay "pending" for Settings → E-Invoices. */
+    /**
+     * Report to ZATCA (needs the Production CSID), then catch up on earlier ones that failed to go
+     * (network down, ZATCA unavailable): simplified invoices are due within 24 hours, and this keeps
+     * them flowing without anyone pressing "Submit pending". What still fails waits for the next sale,
+     * the hourly `zatca:submit-pending`, or the button in Settings → E-Invoices.
+     */
     public function report(Invoice $invoice): void
     {
         if (! ZatcaSetting::current()?->hasProductionCsid()) {
@@ -79,9 +84,62 @@ class OrderInvoicer
 
         try {
             $this->zatca->submit($invoice);
+            $this->zatca->submitPending(retriableOnly: true, limit: 10);
         } catch (Throwable $e) {
             report($e);
         }
+    }
+
+    /**
+     * Cancels a voided sale's e-invoice with a credit note (381) for the same lines and amount, so
+     * ZATCA no longer counts the sale. Null when the sale had no e-invoice in this environment,
+     * or it was credited already.
+     */
+    public function credit(Order $order): ?Invoice
+    {
+        $original = $order->einvoice()->with('items')->first();
+
+        if (! $original || ! ZatcaSetting::current()?->signingCertificate()) {
+            return null;
+        }
+
+        $alreadyCredited = Invoice::query()
+            ->where('document_type', 'credit')
+            ->where('original_invoice_number', $original->invoice_number)
+            ->where('environment', $original->environment)
+            ->exists();
+        if ($alreadyCredited) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($order, $original) {
+            $credit = new Invoice([
+                ...$original->only([
+                    'order_id', 'invoice_type', 'payment_means', 'currency', 'buyer_name', 'buyer_vat_number',
+                    'buyer_street', 'buyer_building_number', 'buyer_district', 'buyer_city', 'buyer_postal_code',
+                ]),
+                'uuid' => (string) Str::uuid(),
+                'invoice_number' => Invoice::nextNumber('credit'),
+                'document_type' => 'credit',
+                'issue_date' => now()->toDateString(),
+                'issue_time' => now()->format('H:i:s'),
+                'original_invoice_number' => $original->invoice_number,
+                'note_reason' => 'Order '.$order->invoice_no.' voided / إلغاء الطلب',
+            ]);
+
+            $items = $original->items->map(fn (InvoiceItem $i) => new InvoiceItem(
+                $i->only(['name', 'quantity', 'unit_price', 'vat_category', 'vat_percent'])
+            ));
+            $credit->calculateTotals($items);
+            $credit->rounding_amount = $original->rounding_amount;
+            $credit->save();
+            $credit->items()->saveMany($items);
+            $credit->setRelation('items', $items);
+
+            $this->zatca->prepare($credit);
+
+            return $credit;
+        });
     }
 
     /**

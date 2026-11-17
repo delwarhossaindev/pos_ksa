@@ -32,6 +32,7 @@ class HandleInertiaRequests extends Middleware
             'translations' => fn () => self::translationsFor($locale),
             'store' => fn () => [
                 'name' => Setting::localized('store_name'),
+                'logo' => Setting::logoUrl(),
                 'currency' => Setting::localized('currency'),
                 'vat_rate' => (float) Setting::get('vat_rate', 15),
                 'timezone' => config('app.timezone'),

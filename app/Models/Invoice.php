@@ -28,6 +28,24 @@ class Invoice extends Model
 
     public const REJECTED = ['NOT_REPORTED', 'NOT_CLEARED', 'ERROR'];
 
+    /** Worth sending again by themselves: never sent, or ZATCA / the network failed (not a validation rejection). */
+    public const RETRIABLE = ['pending', 'ERROR'];
+
+    public const NUMBER_PREFIXES = ['invoice' => 'INV', 'credit' => 'CRN', 'debit' => 'DBN'];
+
+    /** Next free number for a document type: INV-000001, CRN-000001, DBN-000001 … */
+    public static function nextNumber(string $documentType): string
+    {
+        $prefix = self::NUMBER_PREFIXES[$documentType];
+        $count = static::query()->where('document_type', $documentType)->count();
+
+        do {
+            $number = $prefix.'-'.str_pad((string) ++$count, 6, '0', STR_PAD_LEFT);
+        } while (static::query()->where('invoice_number', $number)->exists());
+
+        return $number;
+    }
+
     protected $guarded = ['id'];
 
     protected $attributes = [

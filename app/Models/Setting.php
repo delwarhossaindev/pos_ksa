@@ -54,6 +54,17 @@ class Setting extends Model
         return ZatcaSetting::fixedVat(ZatcaSetting::currentEnvironment(), 'seller') ?? (string) self::get('vat_number');
     }
 
+    /**
+     * The shop logo (public/images/logo.png, with its tab icons icon-32 / icon-180), or null to fall back
+     * to the initial-letter emblem. The file time busts browser caches when the logo is replaced.
+     */
+    public static function logoUrl(string $file = 'logo.png'): ?string
+    {
+        $path = public_path("images/{$file}");
+
+        return is_file($path) ? asset("images/{$file}").'?v='.filemtime($path) : null;
+    }
+
     public static function put(array $values): void
     {
         foreach ($values as $key => $value) {

@@ -136,6 +136,37 @@ class ZatcaService
     }
 
     /**
+     * Report / clear the active environment's invoices that ZATCA has not accepted yet, oldest first
+     * (simplified invoices are due within 24 hours). $retriableOnly skips validation rejections, which
+     * only a corrected credit / debit note fixes — what the automatic retries use.
+     *
+     * @return array{total: int, accepted: int}
+     */
+    public function submitPending(bool $retriableOnly = false, ?int $limit = null): array
+    {
+        if (! ZatcaSetting::current()?->hasProductionCsid()) {
+            return ['total' => 0, 'accepted' => 0];
+        }
+
+        $invoices = Invoice::query()
+            ->where('environment', ZatcaSetting::currentEnvironment())
+            ->when($retriableOnly,
+                fn ($q) => $q->whereIn('zatca_status', Invoice::RETRIABLE),
+                fn ($q) => $q->whereNotIn('zatca_status', Invoice::ACCEPTED))
+            ->whereNotNull('signed_xml')
+            ->orderBy('icv')
+            ->when($limit, fn ($q) => $q->limit($limit))
+            ->get();
+        $accepted = 0;
+
+        foreach ($invoices as $invoice) {
+            $accepted += empty($this->submit($invoice)['errors']) ? 1 : 0;
+        }
+
+        return ['total' => $invoices->count(), 'accepted' => $accepted];
+    }
+
+    /**
      * Report (simplified) or clear (standard) an invoice with the Production CSID.
      */
     public function submit(Invoice $invoice): array

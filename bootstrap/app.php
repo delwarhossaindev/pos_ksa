@@ -59,7 +59,7 @@ return Application::configure(basePath: dirname(__DIR__))
                 'locale' => app()->getLocale(),
                 'dir' => app()->getLocale() === 'ar' ? 'rtl' : 'ltr',
                 'translations' => HandleInertiaRequests::translationsFor(app()->getLocale()),
-                'store' => ['name' => Setting::localized('store_name')],
+                'store' => ['name' => Setting::localized('store_name'), 'logo' => Setting::logoUrl()],
             ])->toResponse($request)->setStatusCode($status);
         });
     })->create();

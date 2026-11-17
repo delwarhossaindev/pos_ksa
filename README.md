@@ -140,7 +140,14 @@ Once onboarding is done, each POS sale gets its **simplified tax invoice** the m
 2. **Reported to ZATCA after the response** — the till never waits on the network. If ZATCA is down, the sale still goes through and the invoice waits in **Settings → E-Invoices → Submit pending**.
 3. **Exact to the halala** — till prices include VAT, so the order's net is spread over the lines in halalas. When net + 15% VAT can't hit the paid total exactly (≈13% of totals, e.g. 10.00 → 8.70 + 1.31), the ±0.01 goes into `PayableRoundingAmount`: the payable amount and QR tag 4 always equal what the customer paid.
 
+4. **Voiding cancels it with ZATCA** — voiding an e-invoiced sale issues a **credit note** (`CRN-…`, 381) for the same lines and amount, signed and reported the same way. Voiding twice never credits twice.
+5. **Nothing is left unreported** — every sale also retries earlier invoices that failed to go (network down, ZATCA unavailable), and `php artisan zatca:submit-pending` runs **hourly**. A validation *rejection* is not resent by itself (it needs a correction): use `--all` or the button after fixing it.
+
 Sales made before onboarding keep the Phase 1 QR; issue their e-invoice by hand from the order page. 📁 `app/Services/Zatca/OrderInvoicer.php`
+
+> [!IMPORTANT]
+> The hourly retry needs Laravel's scheduler: in **cPanel → Cron Jobs** add, every minute,
+> `cd /home/<user>/<domain> && php artisan schedule:run >> /dev/null 2>&1`
 
 ### 🔒 Sandbox VAT numbers (filled in automatically)
 
@@ -172,6 +179,9 @@ cp .env.example .env && php artisan key:generate   # skip if .env exists
 php artisan migrate --seed
 php artisan serve        # → http://127.0.0.1:8000
 ```
+
+> [!CAUTION]
+> Develop against a **local** database (SQLite by default). Pointing a local `.env` at the live MySQL means every test order, `migrate:fresh` or seeder run lands in the shop's real data.
 
 🔥 For hot reload, run `npm run dev` alongside `php artisan serve`.
 🪟 On WAMP you can also open `http://localhost/pos_ksa/public`.
@@ -257,7 +267,7 @@ php artisan db:seed --class=DemoUsersSeeder --force      # Super Admin / Admin /
 php artisan db:seed --class=MenuSeeder --force           # the menu from pos/ (10 categories, 175 items)
 ```
 
-Each seeder can run on its own and again safely: they update rows in place and never touch the store settings. (`php artisan db:seed --force` would also overwrite the store details with the sample receipt's.)
+Each seeder can run on its own and again safely: they update rows in place and never touch the store settings. `DemoUsersSeeder` sets the password `password` only when it **creates** an account — it never resets a password you changed. (`php artisan db:seed --force` would also overwrite the store details with the sample receipt's.)
 
 For one-click demo logins, add `DEMO_LOGINS=true` to the server's `.env` — once, with no other `DEMO_LOGINS` line above it — then run `php artisan config:cache`.
 

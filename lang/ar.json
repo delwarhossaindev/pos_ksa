@@ -208,6 +208,8 @@
     "Administrator only": "للمدير فقط",
     "Super Admin only": "للمدير العام فقط",
     "Language": "اللغة",
+    "Order voided. Credit note :no cancels its e-invoice with ZATCA.": "تم إلغاء الطلب. إشعار الدائن :no يلغي فاتورته الإلكترونية لدى هيئة الزكاة.",
+    "Order voided, but the credit note for its e-invoice could not be created: :error": "تم إلغاء الطلب، لكن تعذّر إنشاء إشعار الدائن لفاتورته الإلكترونية: :error",
     "The e-invoice could not be created; the receipt has the basic QR.": "تعذّر إنشاء الفاتورة الإلكترونية؛ يحمل الإيصال رمز QR الأساسي.",
     "Ramadan Items": "رمضانيات",
     "Add-ons": "إضافات",

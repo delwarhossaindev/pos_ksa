@@ -28,7 +28,8 @@ function loginAs(account) {
             <div style="display:flex;justify-content:flex-end;margin-bottom:.5rem">
                 <LangSwitch />
             </div>
-            <div class="emblem">{{ ($page.props.store.name || '').trim().charAt(0) }}</div>
+            <img v-if="$page.props.store.logo" class="auth-logo" :src="$page.props.store.logo" :alt="$page.props.store.name">
+            <div v-else class="emblem">{{ ($page.props.store.name || '').trim().charAt(0) }}</div>
             <h1>{{ $page.props.store.name }}</h1>
             <p class="muted text-center" style="margin-top:-.4rem">{{ __('Sign in to start selling') }}</p>
 

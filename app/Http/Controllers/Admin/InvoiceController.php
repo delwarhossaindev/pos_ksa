@@ -24,8 +24,6 @@ use Throwable;
  */
 class InvoiceController extends Controller
 {
-    private const NUMBER_PREFIXES = ['invoice' => 'INV', 'credit' => 'CRN', 'debit' => 'DBN'];
-
     private const VAT_PERCENT = 15;
 
     public function __construct(private ZatcaService $zatca) {}
@@ -216,7 +214,7 @@ class InvoiceController extends Controller
                 // A sale keeps its receipt number, so the printed receipt and the e-invoice match.
                 $invoice->invoice_number = $fromOrder && ! Invoice::where('invoice_number', $order->invoice_no)->exists()
                     ? $order->invoice_no
-                    : $this->nextNumber($invoice->document_type);
+                    : Invoice::nextNumber($invoice->document_type);
 
                 $items = collect($data['items'])->map(fn ($item) => new InvoiceItem($item + [
                     'vat_category' => 'S',
@@ -321,29 +319,18 @@ class InvoiceController extends Controller
     /** Report / clear every invoice that has not been accepted yet (simplified invoices are due within 24 hours). */
     public function submitPending(): RedirectResponse
     {
-        $invoices = Invoice::query()
-            ->where('environment', ZatcaSetting::currentEnvironment())
-            ->whereNotIn('zatca_status', Invoice::ACCEPTED)
-            ->whereNotNull('signed_xml')
-            ->orderBy('icv')
-            ->get();
-        $accepted = 0;
-
         try {
-            foreach ($invoices as $invoice) {
-                $result = $this->zatca->submit($invoice);
-                $accepted += empty($result['errors']) ? 1 : 0;
-            }
+            ['total' => $total, 'accepted' => $accepted] = $this->zatca->submitPending();
         } catch (Throwable $e) {
             report($e);
 
             return back()->with('error', $e->getMessage());
         }
 
-        $failed = $invoices->count() - $accepted;
+        $failed = $total - $accepted;
 
         return back()->with($failed ? 'error' : 'status', __('Submitted :total invoice(s): :ok accepted, :failed failed.', [
-            'total' => $invoices->count(), 'ok' => $accepted, 'failed' => $failed,
+            'total' => $total, 'ok' => $accepted, 'failed' => $failed,
         ]));
     }
 
@@ -377,15 +364,4 @@ class InvoiceController extends Controller
         ])->values()->all();
     }
 
-    private function nextNumber(string $documentType): string
-    {
-        $prefix = self::NUMBER_PREFIXES[$documentType];
-        $count = Invoice::query()->where('document_type', $documentType)->count();
-
-        do {
-            $number = $prefix.'-'.str_pad((string) ++$count, 6, '0', STR_PAD_LEFT);
-        } while (Invoice::query()->where('invoice_number', $number)->exists());
-
-        return $number;
-    }
 }
