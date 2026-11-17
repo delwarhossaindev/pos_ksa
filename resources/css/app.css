@@ -167,7 +167,43 @@ table.table { width: 100%; border-collapse: collapse; }
 
 /* ---------- Arabic / Islamic theme details ---------- */
 .auth-card { border-top: 4px solid var(--gold); box-shadow: 0 20px 50px rgba(0, 0, 0, .25); }
-.auth-card .auth-logo { display: block; width: 190px; max-width: 70%; height: auto; margin: -.4rem auto .5rem; filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .18)); }
+/* Login logo, animated: pops in once, then floats with a pulsing gold glow while a light sweeps across.
+   The sweep is masked by the logo image itself, so it only lights the logo, never the card around it. */
+.auth-card .auth-logo {
+    position: relative; width: 190px; max-width: 70%; margin: -.4rem auto .5rem;
+    animation: logo-pop .9s cubic-bezier(.34, 1.56, .64, 1) both, logo-float 3.6s ease-in-out .9s infinite;
+}
+.auth-card .auth-logo img {
+    display: block; width: 100%; height: auto;
+    animation: logo-glow 3.6s ease-in-out .9s infinite;
+}
+.auth-card .auth-logo::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    /* a narrow diagonal streak (≈ a fifth of the logo wide) */
+    background: linear-gradient(105deg, transparent 46%, rgba(255, 255, 255, .6) 50%, transparent 54%) no-repeat;
+    background-size: 250% 100%; background-position: 150% 0;
+    -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat;
+    animation: logo-sheen 3.6s ease-in-out 1.2s infinite;
+}
+@keyframes logo-pop {
+    from { opacity: 0; transform: scale(.4) rotate(-12deg); }
+    to { opacity: 1; transform: scale(1) rotate(0); }
+}
+@keyframes logo-float {
+    0%, 100% { transform: translateY(0) rotate(0); }
+    50% { transform: translateY(-7px) rotate(-1.5deg); }
+}
+@keyframes logo-glow {
+    0%, 100% { filter: drop-shadow(0 4px 10px rgba(0, 0, 0, .18)) drop-shadow(0 0 0 rgba(255, 196, 0, 0)); }
+    50% { filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .22)) drop-shadow(0 0 14px rgba(255, 196, 0, .65)); }
+}
+@keyframes logo-sheen {
+    0% { background-position: 150% 0; }
+    45%, 100% { background-position: -50% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .auth-card .auth-logo, .auth-card .auth-logo img, .auth-card .auth-logo::after { animation: none; }
+}
 .auth-card .emblem {
     width: 64px; height: 64px; margin: 0 auto .6rem; border-radius: 50%;
     background: var(--pattern-on-dark) center / 40px, var(--primary);
